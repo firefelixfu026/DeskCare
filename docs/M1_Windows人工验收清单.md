@@ -1,4 +1,4 @@
-# DeskCare 2.0｜M1 Windows 人工验收清单
+# DeskCare｜M1 Windows 人工验收清单
 
 ## 运行
 

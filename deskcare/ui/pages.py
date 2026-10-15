@@ -56,6 +56,15 @@ APP_DISPLAY_NAMES = {
     "wps": "WPS Office",
 }
 
+CATEGORY_DISPLAY_NAMES = {
+    "CODE": "编程工具",
+    "BROWSER": "浏览器",
+    "MEETING": "会议与通讯",
+    "OFFICE": "办公软件",
+    "OTHER": "其他应用",
+    "UNKNOWN": "暂无法识别",
+}
+
 
 def label(text: str, object_name: str = "") -> QLabel:
     widget = QLabel(text)
@@ -127,7 +136,7 @@ class TodayPage(QWidget):
         root.addWidget(label("把今天放在眼前，按自己的节奏推进。", "pageLead"))
 
         state_row = QHBoxLayout()
-        self.monitoring_badge = label("监测未开启", "statusBadge")
+        self.monitoring_badge = label("电脑使用统计未开启", "statusBadge")
         state_row.addWidget(self.monitoring_badge)
         state_row.addStretch()
         add_button = QPushButton("添加任务")
@@ -189,13 +198,13 @@ class TodayPage(QWidget):
         task_layout.addWidget(label("今日任务", "cardTitle"))
         task_layout.addWidget(label("任务只有在你确认后才会保存；完成状态也只能由你主动修改。", "cardBody"))
         self.task_table = QTableWidget(0, 4)
-        self.task_table.setHorizontalHeaderLabels(["状态", "任务", "截止时间", "预计分钟"])
+        self.task_table.setHorizontalHeaderLabels(["状态", "任务", "截止时间", "预计用时（分钟）"])
         self.task_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.task_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.task_table.horizontalHeader().setStretchLastSection(False)
         self.task_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         task_layout.addWidget(self.task_table)
-        self.empty_state = label("还没有已确认的今日任务。可以手工添加，或选择一个 .txt / .md / .csv 清单开始。", "mutedText")
+        self.empty_state = label("今天还没有任务。可以手动添加，也可以从文字清单导入。", "mutedText")
         task_layout.addWidget(self.empty_state)
         actions = QHBoxLayout()
         self.edit_button = QPushButton("编辑选中")
@@ -207,7 +216,7 @@ class TodayPage(QWidget):
         actions.addStretch()
         task_layout.addLayout(actions)
         root.addWidget(task_frame)
-        root.addWidget(card("下一步建议", "当前监测默认关闭。你可以在“设置与隐私”中单独开启使用统计；未开启时，任务页仍可正常使用。", "#7D9FB3"))
+        root.addWidget(card("下一步建议", "电脑使用统计默认关闭。你可以在“设置与隐私”中自行开启；不开启也可以正常管理任务。", "#7D9FB3"))
         root.addStretch()
         controller.subscribe(self._sync)
         if self.task_service is not None:
@@ -351,12 +360,12 @@ class TodayPage(QWidget):
 
     def _sync(self, enabled: bool, paused: bool) -> None:
         if not enabled:
-            self.monitoring_badge.setText("● 监测未开启")
+            self.monitoring_badge.setText("● 电脑使用统计未开启")
             self.monitoring_badge.setProperty("tone", "muted")
         elif paused:
-            self.monitoring_badge.setText("● 监测已暂停")
+            self.monitoring_badge.setText("● 电脑使用统计已暂停")
         else:
-            self.monitoring_badge.setText("● 监测已开启")
+            self.monitoring_badge.setText("● 电脑使用统计已开启")
         self.monitoring_badge.style().unpolish(self.monitoring_badge)
         self.monitoring_badge.style().polish(self.monitoring_badge)
 
@@ -368,10 +377,10 @@ class UsagePage(QWidget):
         self.collector = collector
         root = QVBoxLayout(self)
         root.setSpacing(16)
-        root.addWidget(label("只展示有限、可解释的电脑活动估计。", "pageLead"))
+        root.addWidget(label("看看电脑大致用了多久。这里的时间是估算值，不代表工作质量。", "pageLead"))
         grid = QGridLayout()
         grid.setSpacing(12)
-        active_frame, self.active_value = self._metric_card("今日活跃估计", "未开启监测", "#7D9FB3")
+        active_frame, self.active_value = self._metric_card("今天活跃时间估计", "未开启统计", "#7D9FB3")
         category_frame, self.category_value = self._metric_card("类别汇总", "暂无数据", "#D69E52")
         grid.addWidget(active_frame, 0, 0)
         grid.addWidget(category_frame, 0, 1)
@@ -383,18 +392,18 @@ class UsagePage(QWidget):
         session_frame.setObjectName("card")
         session_layout = QVBoxLayout(session_frame)
         session_layout.setContentsMargins(18, 15, 18, 15)
-        session_layout.addWidget(label("当前采样会话", "cardTitle"))
+        session_layout.addWidget(label("统计状态", "cardTitle"))
         session_layout.addWidget(self.session_value)
         root.addWidget(session_frame)
         app_frame = QFrame()
         app_frame.setObjectName("card")
         app_layout = QVBoxLayout(app_frame)
         app_layout.setContentsMargins(18, 15, 18, 15)
-        app_layout.addWidget(label("最近 7 天 · 应用明细", "cardTitle"))
+        app_layout.addWidget(label("最近 7 天 · 各应用使用时长", "cardTitle"))
         self.app_usage_value = label("具体应用明细默认关闭。", "appUsageValue")
         app_layout.addWidget(self.app_usage_value)
         root.addWidget(app_frame)
-        root.addWidget(card("采样边界", "不会记录键入内容、截图、窗口标题、网页地址、剪贴板或文件内容。类别统计按日聚合；具体应用标识只有在独立授权后才会保存为按日时长。", "#C56B5D"))
+        root.addWidget(card("你可以放心", "DeskCare 不记录你输入的内容、截图、网页地址或文件内容。按应用统计需要单独开启；关闭后会删除已保存的应用使用记录。", "#C56B5D"))
         root.addStretch()
         controller.subscribe(self._sync)
         if collector is not None:
@@ -419,28 +428,28 @@ class UsagePage(QWidget):
         if not enabled:
             self.active_value.setText("未开启监测\n\n不会把未采集的数据表示为 0 分钟。")
             self.category_value.setText("暂无数据")
-            self.session_value.setText("监测未开启；不会调用活动 provider。")
-            self.demo_banner.setText("监测未开启：当前页面没有读取 Windows 活动，也没有生成虚假 0 分钟数据。")
+            self.session_value.setText("电脑使用统计尚未开启。你仍可正常管理任务。")
+            self.demo_banner.setText("目前没有收集使用时间，因此不会显示成 0 分钟。")
             return
         if self.collector is None:
-            self.active_value.setText("已开启，等待采样")
-            self.category_value.setText("统计服务未连接")
-            self.session_value.setText("当前测试窗口未连接 M1 采样服务。")
+            self.active_value.setText("统计刚开启，正在收集使用时间")
+            self.category_value.setText("统计暂时不可用")
+            self.session_value.setText("统计暂时不可用；其他功能仍可继续使用。")
             return
         rows = self.collector.usage_for_day(date.today())
         active = sum(row.active_seconds for row in rows)
         idle = sum(row.idle_seconds for row in rows)
         unknown = sum(row.unknown_seconds for row in rows)
         if not rows:
-            self.active_value.setText("已开启，等待第二次采样\n\n首个样本只建立会话基线。")
-            self.category_value.setText("尚未形成日聚合")
+            self.active_value.setText("统计已开启，正在收集使用时间")
+            self.category_value.setText("今天还没有可显示的数据")
         else:
             self.active_value.setText(
-                f"约 {active / 60:.1f} 分钟活跃\n"
-                f"约 {idle / 60:.1f} 分钟空闲 · {unknown / 60:.1f} 分钟未知"
+            f"活跃约 {active / 60:.1f} 分钟\n"
+            f"空闲约 {idle / 60:.1f} 分钟 · 未能判断约 {unknown / 60:.1f} 分钟"
             )
             category_lines = [
-                f"{row.category}: {row.active_seconds / 60:.1f} 分钟"
+                f"{CATEGORY_DISPLAY_NAMES.get(row.category, '其他应用')}：{row.active_seconds / 60:.1f} 分钟"
                 for row in rows
                 if row.active_seconds > 0
             ]
@@ -448,22 +457,22 @@ class UsagePage(QWidget):
         state = "已暂停" if paused else "运行中"
         continuous = self.collector.continuous_active_seconds
         self.session_value.setText(
-            f"监测{state}。当前连续活跃估计约 {continuous:.0f} 秒。使用 monotonic 间隔估算；超过 60 秒的采样间隔会被丢弃，避免把睡眠/锁屏算作持续活动。"
+            f"统计{state}。连续使用时间约 {continuous / 60:.1f} 分钟。电脑锁屏或休眠期间不会算作持续使用。"
         )
         reason = self.collector.last_result.reason
         if reason == "provider_error":
-            self.demo_banner.setText("采样异常：本次没有记录活动数据，应用仍可继续运行；请检查系统权限后重试。")
+            self.demo_banner.setText("这次没有记录到使用时间。你可以稍后重试，其他功能不受影响。")
         elif reason == "long_gap":
-            self.demo_banner.setText("采样间隔超过 60 秒：本段未计入活动，避免把锁屏或睡眠算作持续使用。")
+            self.demo_banner.setText("电脑锁屏或休眠后，这段时间不会算作持续使用。")
         elif reason == "non_monotonic_sample":
-            self.demo_banner.setText("采样时间异常：本次间隔未计入活动，等待下一次有效样本。")
+            self.demo_banner.setText("暂时无法判断这段使用时间；下一次正常记录后会继续统计。")
         elif reason == "observation_unavailable":
-            self.demo_banner.setText("本次观测不可用：未写入活动统计，后续有效样本会重新建立基线。")
+            self.demo_banner.setText("这段时间没有计入统计；之后有新的记录时会继续更新。")
         else:
             self.demo_banner.setText(
-                "演示数据：当前 provider 为 FakeProvider，未读取 Windows 活动。"
+                "这是演示数据，没有读取这台电脑的真实使用情况。"
                 if self.controller.provider_is_demo
-                else "Windows 受控采样：仅在你开启监测后读取空闲秒数与粗粒度类别；应用标识需独立授权。"
+                else "只有开启统计后，DeskCare 才会估算活跃时间和应用类别；具体应用名称需单独开启统计。"
             )
 
     def _sync_app_usage(self) -> None:
@@ -498,13 +507,13 @@ class ReportsPage(QWidget):
         self._report_ai_generation = 0
         root = QVBoxLayout(self)
         root.setSpacing(16)
-        root.addWidget(label("以事实为基础回顾，不把估计说成结论。", "pageLead"))
+        root.addWidget(label("回顾最近的任务和电脑使用情况。记录只是参考，不是健康或效率评判。", "pageLead"))
 
         bodylog_frame = QFrame()
         bodylog_frame.setObjectName("card")
         bodylog_layout = QVBoxLayout(bodylog_frame)
         bodylog_layout.setContentsMargins(18, 15, 18, 15)
-        bodylog_layout.addWidget(label("BodyLog · 今日状态打卡", "cardTitle"))
+        bodylog_layout.addWidget(label("今天的状态", "cardTitle"))
         self.bodylog_status = label("状态打卡默认关闭；需要单独授权。", "cardBody")
         bodylog_layout.addWidget(self.bodylog_status)
         bodylog_actions = QHBoxLayout()
@@ -512,7 +521,7 @@ class ReportsPage(QWidget):
         for level in WellnessLevel:
             self.wellness_level.addItem(WELLNESS_LEVEL_LABELS[level], level)
         bodylog_actions.addWidget(self.wellness_level)
-        self.save_wellness = QPushButton("保存今天的自报")
+        self.save_wellness = QPushButton("保存今天的状态")
         self.save_wellness.clicked.connect(self._save_wellness)
         bodylog_actions.addWidget(self.save_wellness)
         self.delete_wellness = QPushButton("删除今天记录")
@@ -520,7 +529,7 @@ class ReportsPage(QWidget):
         bodylog_actions.addWidget(self.delete_wellness)
         bodylog_actions.addStretch()
         bodylog_layout.addLayout(bodylog_actions)
-        bodylog_layout.addWidget(label("只记录你主动选择的粗粒度舒适度，不是医学测量；可以不记录或随时删除。", "mutedText"))
+        bodylog_layout.addWidget(label("只记录你主动选择的简单状态，不是医学检查；你可以不记录，也可以随时删除。", "mutedText"))
         root.addWidget(bodylog_frame)
 
         report_frame = QFrame()
@@ -528,7 +537,7 @@ class ReportsPage(QWidget):
         report_layout = QVBoxLayout(report_frame)
         report_layout.setContentsMargins(18, 15, 18, 15)
         report_top = QHBoxLayout()
-        report_top.addWidget(label("本地事实报告", "cardTitle"))
+        report_top.addWidget(label("今日 / 每周小结", "cardTitle"))
         report_top.addStretch()
         self.report_period = QComboBox()
         self.report_period.addItem("今日日报", "daily")
@@ -538,12 +547,12 @@ class ReportsPage(QWidget):
         self.refresh_report_button = QPushButton("刷新报告")
         self.refresh_report_button.clicked.connect(self.refresh_report)
         report_top.addWidget(self.refresh_report_button)
-        self.export_report_button = QPushButton("导出 Markdown")
+        self.export_report_button = QPushButton("保存为文件")
         self.export_report_button.clicked.connect(self._export_report)
         report_top.addWidget(self.export_report_button)
-        self.ai_report_button = QPushButton("本地 AI 改写")
+        self.ai_report_button = QPushButton("AI 帮我润色")
         self.ai_report_button.setEnabled(local_ai_service is not None and local_ai_service.enabled)
-        self.ai_report_button.setToolTip("只在你主动点击后，把当前结构化 FactSheet 发送到本机回环模型。")
+        self.ai_report_button.setToolTip("只在你主动点击后，使用已设置的本机 AI 帮助整理这份小结；不会发送到云端。")
         self.ai_report_button.clicked.connect(self._rewrite_with_ai)
         report_top.addWidget(self.ai_report_button)
         report_layout.addLayout(report_top)
@@ -553,7 +562,7 @@ class ReportsPage(QWidget):
         self.report_text.setReadOnly(True)
         self.report_text.setMinimumHeight(260)
         report_layout.addWidget(self.report_text)
-        report_layout.addWidget(label("报告仅来自本地结构化记录；没有数据时会明确说明缺失，不把电脑活动解释为健康或效率结论。", "mutedText"))
+        report_layout.addWidget(label("小结只使用 DeskCare 已记录的信息。缺少记录时会直接说明，不会猜测你的健康或工作效率。", "mutedText"))
         root.addWidget(report_frame)
         root.addStretch()
         if self.bodylog_service is not None:
@@ -570,9 +579,9 @@ class ReportsPage(QWidget):
 
     def _sync_bodylog(self, enabled: bool) -> None:
         self.bodylog_status.setText(
-            "状态打卡已开启；只保存你今天主动选择的粗粒度选项。"
+            "状态打卡已开启；只保存你今天主动选择的选项。"
             if enabled
-            else "状态打卡默认关闭；请先在“设置与隐私”中单独授权。"
+            else "状态打卡默认关闭；需要时可在“设置与隐私”中开启。"
         )
         self.wellness_level.setEnabled(enabled)
         self.save_wellness.setEnabled(enabled)
@@ -602,7 +611,7 @@ class ReportsPage(QWidget):
         answer = QMessageBox.question(
             self,
             "删除今天的状态记录",
-            "是否删除今天的 BodyLog 自报？删除后报告不再包含这条记录。",
+            "是否删除今天的状态记录？删除后今日小结不再包含这条记录。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -621,18 +630,18 @@ class ReportsPage(QWidget):
     def refresh_report(self) -> None:
         self._report_ai_generation += 1
         if self.report_service is None:
-            self.report_text.setPlainText("M4 报告服务未连接。")
-            self.report_sources.setText("当前窗口未连接本地报告服务。")
+            self.report_text.setPlainText("小结暂时不可用。")
+            self.report_sources.setText("目前无法读取本机保存的记录。")
             return
         period = self._current_period(self.report_period.currentData() or "daily")
         facts, markdown = self.report_service.render(period)
         self.report_text.setPlainText(markdown)
         quality = facts["data_quality"]
         self.report_sources.setText(
-            f"事实来源：usage_daily / 用户确认任务 / reminder_events / BodyLog 自报；"
-            f"活动授权：{'已开启' if quality['activity_monitoring_enabled'] else '未开启'}；"
-            f"状态打卡：{'已授权' if quality['wellness_opt_in'] else '未授权'}；"
-            f"生成：本地规则/模板"
+            f"小结依据：电脑使用记录、你确认的任务和提醒反馈；"
+            f"电脑使用统计：{'已开启' if quality['activity_monitoring_enabled'] else '未开启'}；"
+            f"状态打卡：{'已开启' if quality['wellness_opt_in'] else '未开启'}；"
+            f"生成方式：DeskCare 本机整理"
         )
 
     def _rewrite_with_ai(self) -> None:
@@ -659,7 +668,7 @@ class ReportsPage(QWidget):
         self._report_ai_thread = thread
         self._report_ai_worker = worker
         self.ai_report_button.setEnabled(False)
-        self.ai_report_button.setText("本地 AI 改写中…")
+        self.ai_report_button.setText("正在整理…")
         thread.start()
 
     def _on_report_ai_finished(self, generation: int, markdown: str, used_model: bool) -> None:
@@ -670,15 +679,15 @@ class ReportsPage(QWidget):
             return
         self.report_text.setPlainText(markdown)
         self.report_sources.setText(
-            "事实来源：当前本地 FactSheet；生成：本地模型（数字由事实表代入）"
+            "由本机 AI 协助整理；记录中的时间和数字仍由 DeskCare 提供。"
             if used_model
-            else "本地模型不可用或输出未通过校验，已回退本地规则/模板。"
+            else "本机 AI 暂时不可用，已显示 DeskCare 的基础小结。"
         )
 
     def _on_report_ai_thread_finished(self) -> None:
         self._report_ai_thread = None
         self._report_ai_worker = None
-        self.ai_report_button.setText("本地 AI 改写")
+        self.ai_report_button.setText("AI 帮我润色")
         self.ai_report_button.setEnabled(
             self.local_ai_service is not None and self.local_ai_service.enabled
         )
@@ -726,8 +735,8 @@ class SettingsPage(QWidget):
         settings_content.setObjectName("settingsContent")
         root = QVBoxLayout(settings_content)
         root.setSpacing(14)
-        root.addWidget(label("所有敏感能力分开授权，随时可以暂停或清除。", "pageLead"))
-        root.addWidget(card("隐私原则", "DeskCare 默认离线运行。M1 只有在你明确开启后才读取有限活动信号；M2 只在你主动选择文件后读取其内容，并且只保存确认后的结构化任务；M3 提醒只使用有限活动聚合、已确认任务和你选择的情境。不读取键盘内容、窗口标题、网页地址或剪贴板。", "#2F6B5F"))
+        root.addWidget(label("哪些信息会被记录、是否使用 AI，都由你决定；每项都可以单独关闭。", "pageLead"))
+        root.addWidget(card("隐私说明", "电脑使用统计默认关闭。你开启后，DeskCare 只记录大致的活跃时间和应用类别；只有你主动选文件时才读取清单，并且只有确认后的任务才会保存。不记录键盘输入、截图、窗口标题、网页地址或剪贴板内容。", "#2F6B5F"))
 
         self.companion_enabled = QCheckBox("显示桌面伙伴（默认关闭；可随时隐藏）")
         self.companion_enabled.setChecked(
@@ -736,14 +745,14 @@ class SettingsPage(QWidget):
         )
         self.companion_enabled.toggled.connect(self._toggle_companion)
         root.addWidget(self.companion_enabled)
-        root.addWidget(label("伙伴只显示你已确认的今日任务和手动情境；本地语音需另行配置 Vosk 模型，仅在按住录音时访问麦克风，不保留音频文件。", "mutedText"))
+        root.addWidget(label("伙伴只显示你确认过的任务和手动选择的情境。语音输入目前需要另行设置离线语音包；按住说话时才会使用麦克风，录音不会保存成文件。", "mutedText"))
 
-        self.monitoring = QCheckBox("开启电脑活动统计：空闲秒数与粗粒度类别（默认关闭）")
+        self.monitoring = QCheckBox("开启电脑使用统计（默认关闭）")
         self.monitoring.setChecked(controller.enabled)
         self.monitoring.toggled.connect(self._toggle_monitoring)
         root.addWidget(self.monitoring)
 
-        self.app_names = QCheckBox("允许按具体应用统计时长（独立授权，默认关闭）")
+        self.app_names = QCheckBox("显示每个应用的使用时长（单独开启，默认关闭）")
         self.app_names.setChecked(
             collector.repository.get_consent("app_name_stats") is True
             if collector is not None else False
@@ -755,7 +764,7 @@ class SettingsPage(QWidget):
         self.app_names.toggled.connect(self._toggle_app_names)
         root.addWidget(self.app_names)
         root.addWidget(label(
-            "应用明细只有在此开关和电脑活动统计都开启时才记录。关闭此项会立即删除已有应用级统计；类别统计授权不受影响。",
+            "只有同时开启电脑使用统计和此项，才会记录应用名称。关闭后会立即删除已有应用时长；类别汇总不受影响。",
             "mutedText",
         ))
         self.activity_tips = QCheckBox("休息提醒中显示轻柔、可跳过的活动建议")
@@ -766,7 +775,7 @@ class SettingsPage(QWidget):
         self.activity_tips.setEnabled(collector is not None)
         self.activity_tips.toggled.connect(self._toggle_activity_tips)
         root.addWidget(self.activity_tips)
-        self.health = QCheckBox("开启个人状态打卡：只保存我主动填写的粗粒度舒适度（默认关闭）")
+        self.health = QCheckBox("开启每天的状态打卡（默认关闭）")
         self.health.setChecked(bodylog_service.enabled if bodylog_service is not None else False)
         self.health.setEnabled(bodylog_service is not None)
         self.health.toggled.connect(self._toggle_bodylog)
@@ -775,9 +784,9 @@ class SettingsPage(QWidget):
         personalization_card.setObjectName("card")
         personalization_layout = QVBoxLayout(personalization_card)
         personalization_layout.setContentsMargins(14, 10, 14, 10)
-        personalization_layout.addWidget(label("提醒反馈个性化（透明规则）", "cardTitle"))
+        personalization_layout.addWidget(label("让休息提醒参考我的反馈", "cardTitle"))
         self.reminder_personalization = QCheckBox(
-            "允许根据我主动提交的提醒反馈，小步降低不合时宜的提醒频率（默认关闭）"
+            "允许 DeskCare 参考我的反馈，减少不合时宜的提醒（默认关闭）"
         )
         self.reminder_personalization.setChecked(
             personalization_service.enabled if personalization_service is not None else False
@@ -788,7 +797,7 @@ class SettingsPage(QWidget):
         self.reminder_personalization.toggled.connect(self._toggle_personalization)
         personalization_layout.addWidget(self.reminder_personalization)
         self.personalization_feedback = label(
-            "至少 10 次真实反馈后才评估；只会把候选窗口延后 5 分钟，不改变静默、截止时间和冷却硬规则。",
+            "收集到足够的提醒反馈后，DeskCare 才会尝试调整提醒时机；你可以随时关闭或恢复默认。",
             "mutedText",
         )
         personalization_layout.addWidget(self.personalization_feedback)
@@ -799,19 +808,23 @@ class SettingsPage(QWidget):
         self.reset_personalization.clicked.connect(self._reset_personalization)
         personalization_layout.addWidget(self.reset_personalization)
         root.addWidget(personalization_card)
-        self.local_ai = QCheckBox("允许本机 Local LLM 处理我主动选择的任务清单或报告事实（默认关闭）")
+        self.local_ai = QCheckBox("允许本机 AI 帮我整理任务清单和小结（默认关闭）")
         self.local_ai.setChecked(local_ai_service.enabled if local_ai_service is not None else False)
         self.local_ai.setEnabled(local_ai_service is not None)
-        self.local_ai.setToolTip("只允许访问 localhost/127.0.0.1；报告只有在你主动点击改写时才会发送结构化事实；不会上传到云端。")
+        self.local_ai.setToolTip("只使用这台电脑上的 AI 服务，不会把内容上传到云端。整理任务或小结仍需你主动点击。")
         self.local_ai.toggled.connect(self._toggle_local_ai)
         root.addWidget(self.local_ai)
+        self.local_ai_advanced_button = QPushButton("填写本机 AI 连接信息（高级设置）")
+        self.local_ai_advanced_button.setCheckable(True)
+        root.addWidget(self.local_ai_advanced_button)
         local_ai_config = QFrame()
+        self.local_ai_config = local_ai_config
         local_ai_config.setObjectName("card")
         local_ai_layout = QVBoxLayout(local_ai_config)
         local_ai_layout.setContentsMargins(14, 10, 14, 10)
-        local_ai_layout.addWidget(label("本地模型连接（只允许回环地址）", "cardTitle"))
+        local_ai_layout.addWidget(label("本机 AI 连接设置（高级选项）", "cardTitle"))
         endpoint_row = QHBoxLayout()
-        endpoint_row.addWidget(label("Endpoint", "mutedText"))
+        endpoint_row.addWidget(label("服务地址", "mutedText"))
         self.local_ai_endpoint = QLineEdit(
             local_ai_service.endpoint if local_ai_service is not None else "http://127.0.0.1:11434/api/chat"
         )
@@ -828,86 +841,100 @@ class SettingsPage(QWidget):
         self.save_local_ai_config = QPushButton("保存配置")
         self.save_local_ai_config.clicked.connect(self._save_local_ai_config)
         model_row.addWidget(self.save_local_ai_config)
-        self.probe_local_ai = QPushButton("检测本机模型")
+        self.probe_local_ai = QPushButton("检查本机 AI 是否可用")
         self.probe_local_ai.setEnabled(
             local_ai_service is not None and local_ai_service.enabled
         )
-        self.probe_local_ai.setToolTip("只请求回环地址的 /api/tags，不发送任务、报告或 BodyLog。")
+        self.probe_local_ai.setToolTip("只检查本机 AI 是否可用，不会发送任务或小结。")
         self.probe_local_ai.clicked.connect(self._probe_local_ai)
         model_row.addWidget(self.probe_local_ai)
         local_ai_layout.addLayout(model_row)
         self.local_ai_config_feedback = label(
-            "配置只保存在本地；保存时只校验地址格式，不会联网测试。", "mutedText"
+            "设置只保存在这台电脑；保存时不会连接 AI 服务。", "mutedText"
         )
         local_ai_layout.addWidget(self.local_ai_config_feedback)
+        local_ai_config.setVisible(False)
+        self.local_ai_advanced_button.toggled.connect(local_ai_config.setVisible)
         root.addWidget(local_ai_config)
 
         cloud_card = QFrame()
         cloud_card.setObjectName("card")
         cloud_layout = QVBoxLayout(cloud_card)
         cloud_layout.setContentsMargins(14, 10, 14, 10)
-        cloud_layout.addWidget(label("可选云端任务解析（默认关闭）", "cardTitle"))
+        cloud_layout.addWidget(label("联网 AI（可选，默认关闭）", "cardTitle"))
         cloud_layout.addWidget(label(
-            "仅解析你主动选择的任务清单。开启授权不自动联网；每次发送前逐次预览完整 JSON 正文并确认。"
-            "不发送活动/应用统计、BodyLog 或报告。关闭授权会删除已存 API Key。", "mutedText"
+            "只处理你主动选择的任务清单。每次发送前都会展示内容并等你确认；任务文字会发送给你设置的服务商，可能产生费用并受其隐私政策约束。"
+            "不会发送电脑使用统计或状态打卡。关闭授权会删除已保存的服务密钥。", "mutedText"
         ))
-        self.cloud_ai = QCheckBox("允许将我主动选择的任务清单发送到配置的云端 AI 服务")
+        self.cloud_ai = QCheckBox("允许把我选中的任务清单发送给联网 AI 整理")
         self.cloud_ai.setChecked(cloud_ai_service.enabled if cloud_ai_service is not None else False)
         self.cloud_ai.setEnabled(cloud_ai_service is not None)
         self.cloud_ai.toggled.connect(self._toggle_cloud_ai)
         cloud_layout.addWidget(self.cloud_ai)
+        self.cloud_advanced_button = QPushButton("填写联网 AI 服务信息（高级设置）")
+        self.cloud_advanced_button.setCheckable(True)
+        cloud_layout.addWidget(self.cloud_advanced_button)
+        cloud_advanced = QWidget()
+        self.cloud_advanced_frame = cloud_advanced
+        cloud_advanced_layout = QVBoxLayout(cloud_advanced)
+        cloud_advanced_layout.setContentsMargins(0, 0, 0, 0)
         self.cloud_endpoint = QLineEdit(cloud_ai_service.endpoint if cloud_ai_service else "https://api.openai.com/v1/chat/completions")
         self.cloud_endpoint.setPlaceholderText("https://…/v1/chat/completions")
-        cloud_layout.addWidget(self.cloud_endpoint)
+        self.cloud_endpoint.setToolTip("服务商提供的 HTTPS 地址。请确认服务商可信并了解其数据政策。")
+        cloud_advanced_layout.addWidget(self.cloud_endpoint)
         cloud_model_row = QHBoxLayout()
         self.cloud_model = QLineEdit(cloud_ai_service.model if cloud_ai_service else "")
-        self.cloud_model.setPlaceholderText("模型名称（由服务商提供）")
+        self.cloud_model.setPlaceholderText("服务商提供的模型名称（高级设置）")
         cloud_model_row.addWidget(self.cloud_model, 1)
-        self.save_cloud_config = QPushButton("保存云端配置")
+        self.save_cloud_config = QPushButton("保存联网 AI 设置")
         self.save_cloud_config.clicked.connect(self._save_cloud_config)
         cloud_model_row.addWidget(self.save_cloud_config)
-        cloud_layout.addLayout(cloud_model_row)
+        cloud_advanced_layout.addLayout(cloud_model_row)
         key_row = QHBoxLayout()
         self.cloud_key_status = label(
-            "API Key 已保存在 Windows 凭据管理器。" if cloud_ai_service and cloud_ai_service.has_key
-            else "尚未保存 API Key。", "mutedText"
+            "服务密钥已安全保存。" if cloud_ai_service and cloud_ai_service.has_key
+            else "尚未保存服务密钥。", "mutedText"
         )
         key_row.addWidget(self.cloud_key_status, 1)
-        self.save_cloud_key = QPushButton("输入/更新 API Key")
+        self.save_cloud_key = QPushButton("输入服务密钥")
+        self.save_cloud_key.setToolTip("服务商也可能称它为 API Key；DeskCare 会将其保存在 Windows 凭据管理器中。")
         self.save_cloud_key.setEnabled(cloud_ai_service is not None)
         self.save_cloud_key.clicked.connect(self._save_cloud_key)
         key_row.addWidget(self.save_cloud_key)
-        self.delete_cloud_key = QPushButton("删除 API Key")
+        self.delete_cloud_key = QPushButton("删除服务密钥")
         self.delete_cloud_key.setEnabled(cloud_ai_service is not None and cloud_ai_service.has_key)
         self.delete_cloud_key.clicked.connect(self._delete_cloud_key)
         key_row.addWidget(self.delete_cloud_key)
-        cloud_layout.addLayout(key_row)
-        self.cloud_feedback = label("Key 不写入 SQLite、日志或导出。所有请求使用 HTTPS。", "mutedText")
-        cloud_layout.addWidget(self.cloud_feedback)
+        cloud_advanced_layout.addLayout(key_row)
+        self.cloud_feedback = label("服务密钥不会写入应用数据、日志或导出文件；联网请求使用加密连接。", "mutedText")
+        cloud_advanced_layout.addWidget(self.cloud_feedback)
+        cloud_advanced.setVisible(False)
+        self.cloud_advanced_button.toggled.connect(cloud_advanced.setVisible)
+        cloud_layout.addWidget(cloud_advanced)
         root.addWidget(cloud_card)
 
-        self.pause_button = QPushButton("暂停监测" if controller.enabled else "监测尚未开启")
+        self.pause_button = QPushButton("暂停电脑使用统计" if controller.enabled else "电脑使用统计尚未开启")
         self.pause_button.setEnabled(controller.enabled)
         self.pause_button.clicked.connect(controller.toggle_paused)
         root.addWidget(self.pause_button)
-        self.clear_usage_button = QPushButton("清除已保存的活动统计")
+        self.clear_usage_button = QPushButton("清除电脑使用记录")
         self.clear_usage_button.setEnabled(collector is not None)
         self.clear_usage_button.clicked.connect(self._clear_usage)
         root.addWidget(self.clear_usage_button)
-        self.clear_usage_feedback = label("仅删除本地活动聚合，不改变监测授权；执行前会再次确认。", "mutedText")
+        self.clear_usage_feedback = label("只删除电脑使用记录，不会改变统计开关；删除前会再次确认。", "mutedText")
         root.addWidget(self.clear_usage_feedback)
-        self.clear_wellness_button = QPushButton("清除全部 BodyLog 状态记录")
+        self.clear_wellness_button = QPushButton("清除所有状态打卡记录")
         self.clear_wellness_button.setEnabled(bodylog_service is not None)
         self.clear_wellness_button.clicked.connect(self._clear_wellness)
         root.addWidget(self.clear_wellness_button)
-        self.clear_wellness_feedback = label("只删除状态自报，不关闭授权；执行前会再次确认。", "mutedText")
+        self.clear_wellness_feedback = label("只删除状态打卡，不会改变开关；删除前会再次确认。", "mutedText")
         root.addWidget(self.clear_wellness_feedback)
         self.clear_all_button = QPushButton("清除 DeskCare 全部本地数据")
         self.clear_all_button.setEnabled(collector is not None)
         self.clear_all_button.clicked.connect(self._clear_all_data)
         root.addWidget(self.clear_all_button)
-        root.addWidget(label("将删除活动聚合、已确认任务、提醒反馈、BodyLog 记录和本地授权状态，并压缩本地数据库；不会删除程序文件。系统备份或磁盘快照中仍可能存在副本。", "mutedText"))
-        root.addWidget(label("BodyLog 和本地 AI 均为独立授权；本地模型只访问回环地址，任务清单和报告改写都仍需你的主动操作。", "mutedText"))
+        root.addWidget(label("将删除电脑使用记录、已保存任务、提醒反馈、状态打卡和授权设置；不会删除程序文件。系统备份中可能仍有副本。", "mutedText"))
+        root.addWidget(label("本机 AI 和联网 AI 都是可选项。使用联网 AI 前，DeskCare 会先让你查看并确认要发送的内容。", "mutedText"))
         root.addStretch()
         controller.subscribe(self._sync)
         if self.local_ai_service is not None:
@@ -955,9 +982,9 @@ class SettingsPage(QWidget):
             return
         if enabled:
             answer = QMessageBox.question(
-                self, "单独授权云端任务解析",
-                "授权后，只有你在任务导入窗口点击‘云端 AI 提议’，查看每次完整请求预览并选择确认，所选任务清单才会通过 HTTPS 发给你配置的服务。"
-                "活动/应用统计、BodyLog、报告不会发送。关闭此授权会删除本地保存的 API Key。现在授权吗？",
+                self, "开启联网 AI",
+                "开启后，只有你在导入任务清单时选择联网 AI，并查看本次内容、再次确认后，任务文字才会发送给你设置的服务商。"
+                "电脑使用统计和状态打卡不会发送。服务商的数据和收费规则请以其说明为准；关闭此项会删除已保存的服务密钥。现在开启吗？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -975,7 +1002,7 @@ class SettingsPage(QWidget):
             self.cloud_ai.setChecked(False)
             self.cloud_ai.blockSignals(False)
             QMessageBox.warning(
-                self, "云端 AI 授权状态",
+                self, "联网 AI 设置状态",
                 ("云端授权已关闭，但 Windows 凭据删除失败。请在 Windows 凭据管理器中检查并删除 DeskCare/CloudAI/OpenAICompatible。\n\n" + str(exc))
                 if not enabled else str(exc),
             )
@@ -990,11 +1017,11 @@ class SettingsPage(QWidget):
         except ValueError as exc:
             QMessageBox.warning(self, "无法保存云端配置", str(exc))
             return
-        self.cloud_feedback.setText("Endpoint 和模型名称已保存到本地；保存配置不会联网。")
+        self.cloud_feedback.setText("联网 AI 设置已保存；保存时不会连接服务商。")
 
     def _save_cloud_key(self) -> None:
         if self.cloud_ai_service is None or not self.cloud_ai_service.enabled:
-            QMessageBox.information(self, "需要授权", "请先单独开启云端 AI 授权。")
+            QMessageBox.information(self, "需要授权", "请先开启联网 AI，并确认你同意发送所选任务清单。")
             return
         secret, accepted = QInputDialog.getText(
             self, "保存 API Key", "API Key（仅保存到 Windows 凭据管理器）:", QLineEdit.EchoMode.Password
@@ -1020,7 +1047,7 @@ class SettingsPage(QWidget):
 
     def _sync_cloud_key_status(self) -> None:
         present = self.cloud_ai_service is not None and self.cloud_ai_service.has_key
-        self.cloud_key_status.setText("API Key 已保存在 Windows 凭据管理器。" if present else "尚未保存 API Key。")
+        self.cloud_key_status.setText("服务密钥已安全保存。" if present else "尚未保存服务密钥。")
         self.delete_cloud_key.setEnabled(present)
 
     def _toggle_personalization(self, enabled: bool) -> None:
@@ -1061,7 +1088,7 @@ class SettingsPage(QWidget):
             QMessageBox.warning(self, "无法保存本地 AI 配置", str(exc))
             return
         self.local_ai_config_feedback.setText(
-            "配置已保存到本地；DeskCare 不会在保存时联网，只有你主动使用 AI 功能时才请求本机服务。"
+            "设置已保存到这台电脑；保存时没有联网。只有你主动使用 AI 功能时才会连接本机服务。"
         )
 
     def _probe_local_ai(self) -> None:
@@ -1081,7 +1108,7 @@ class SettingsPage(QWidget):
         self.local_ai_model.setEnabled(False)
         self.save_local_ai_config.setEnabled(False)
         self.local_ai_config_feedback.setText(
-            "正在检查本机回环服务；不会发送任务、报告或 BodyLog。"
+            "正在检查本机 AI 是否可用；不会发送任务清单或小结。"
         )
         thread = QThread(self)
         worker = _LocalModelProbeWorker(self.local_ai_service, endpoint, configured_model)
@@ -1110,7 +1137,7 @@ class SettingsPage(QWidget):
             return
         if not models:
             self.local_ai_config_feedback.setText(
-                "本机服务已连接，但没有发现已安装模型；请先在 Ollama 中准备模型。"
+                "本机 AI 服务已连接，但没有可用模型；请按本机 AI 软件的说明准备模型。"
             )
             return
         preview = "、".join(models[:4])
@@ -1127,7 +1154,7 @@ class SettingsPage(QWidget):
     def _on_local_ai_probe_thread_finished(self) -> None:
         self._local_ai_probe_thread = None
         self._local_ai_probe_worker = None
-        self.probe_local_ai.setText("检测本机模型")
+        self.probe_local_ai.setText("检查本机 AI 是否可用")
         self.probe_local_ai.setEnabled(
             self.local_ai_service is not None and self.local_ai_service.enabled
         )
@@ -1140,14 +1167,14 @@ class SettingsPage(QWidget):
             return
         answer = QMessageBox.question(
             self,
-            "确认清除 BodyLog",
-            "这会删除本地所有状态自报，但不会关闭授权。是否继续？",
+            "确认清除状态打卡",
+            "这会删除本地所有状态打卡记录，但不会关闭开关。是否继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer == QMessageBox.StandardButton.Yes:
             self.bodylog_service.clear_all()
-            self.clear_wellness_feedback.setText("已清除全部 BodyLog 状态记录；授权状态未改变。")
+            self.clear_wellness_feedback.setText("已清除所有状态打卡记录；开关状态未改变。")
 
     def _clear_all_data(self) -> None:
         if self.collector is None:
@@ -1155,7 +1182,7 @@ class SettingsPage(QWidget):
         answer = QMessageBox.question(
             self,
             "确认清除 DeskCare 全部数据",
-            "这会删除活动聚合、任务、提醒反馈、BodyLog 记录和所有本地授权状态，并压缩本地数据库。无法清除系统备份或磁盘快照中的副本。此操作不可从应用内撤销，是否继续？",
+            "这会删除电脑使用记录、已保存任务、提醒反馈、状态打卡和所有授权设置。系统备份中可能仍有副本；此操作不能在 DeskCare 内撤销。是否继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -1200,8 +1227,8 @@ class SettingsPage(QWidget):
             return
         answer = QMessageBox.question(
             self,
-            "确认清除活动统计",
-            "这会删除 DeskCare 已保存的活动日聚合，但不会删除授权设置。是否继续？",
+            "确认清除电脑使用记录",
+            "这会删除 DeskCare 已保存的电脑使用时间，但不会关闭统计开关。是否继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -1210,14 +1237,14 @@ class SettingsPage(QWidget):
         self.collector.repository.clear_usage()
         self.collector.reset_session()
         self.collector.notify()
-        self.clear_usage_feedback.setText("已清除本地活动统计；监测授权状态未改变。")
+        self.clear_usage_feedback.setText("已清除电脑使用记录；统计开关状态未改变。")
 
     def _sync(self, enabled: bool, paused: bool) -> None:
         self.monitoring.blockSignals(True)
         self.monitoring.setChecked(enabled)
         self.monitoring.blockSignals(False)
         self.pause_button.setEnabled(enabled)
-        self.pause_button.setText("恢复监测" if paused else "暂停监测" if enabled else "监测尚未开启")
+        self.pause_button.setText("恢复电脑使用统计" if paused else "暂停电脑使用统计" if enabled else "电脑使用统计尚未开启")
         if self.bodylog_service is not None:
             self.health.blockSignals(True)
             self.health.setChecked(self.bodylog_service.enabled)

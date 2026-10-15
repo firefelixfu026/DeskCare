@@ -38,7 +38,7 @@ class TrayController:
             return
 
         self.tray = QSystemTrayIcon(build_tray_icon(), window)
-        self.tray.setToolTip("DeskCare 2.0")
+        self.tray.setToolTip("DeskCare")
         menu = QMenu()
         show_action = QAction("打开 DeskCare", menu)
         show_action.triggered.connect(self.show_window)
@@ -49,7 +49,7 @@ class TrayController:
         self.window.settings_page.companion_visibility_changed.connect(
             self.companion_action.setChecked
         )
-        self.pause_action = QAction("暂停监测", menu)
+        self.pause_action = QAction("暂停电脑使用统计", menu)
         self.pause_action.triggered.connect(self.toggle_pause)
         quit_action = QAction("退出", menu)
         quit_action.triggered.connect(self.quit)
@@ -66,7 +66,7 @@ class TrayController:
     def _sync_pause_action(self, enabled: bool, paused: bool) -> None:
         pause_action = getattr(self, "pause_action", None)
         if pause_action is not None:
-            pause_action.setText("恢复监测" if paused else "暂停监测")
+            pause_action.setText("恢复电脑使用统计" if paused else "暂停电脑使用统计")
             pause_action.setEnabled(enabled)
 
     def _activated(self, reason) -> None:

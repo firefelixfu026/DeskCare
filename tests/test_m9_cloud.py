@@ -63,7 +63,9 @@ def test_cloud_ai_is_wired_into_settings_but_starts_disabled(tmp_path):
     window = MainWindow(ConfigStore(), controller, repository=repository, cloud_ai_service=service)
     assert window.settings_page.cloud_ai.isChecked() is False
     assert service.enabled is False
-    assert window.settings_page.cloud_key_status.text() == "尚未保存 API Key。"
+    assert window.settings_page.cloud_key_status.text() == "尚未保存服务密钥。"
+    assert window.settings_page.cloud_advanced_button.isChecked() is False
+    assert window.settings_page.cloud_advanced_frame.isHidden()
     window._allow_close = True
     window.close()
     app.processEvents()
@@ -84,7 +86,7 @@ def test_cloud_request_preview_is_exact_body_and_contains_only_selected_text(tmp
 
 
 def test_canceling_cloud_preview_never_starts_parser(monkeypatch, tmp_path):
-    from PySide6.QtWidgets import QApplication, QDialog
+    from PySide6.QtWidgets import QApplication, QDialog, QPlainTextEdit
     from deskcare.domain.types import TaskDraft
     from deskcare.importers.base import ImportResult
     from deskcare.ui.task_dialog import ImportPreviewDialog
@@ -100,7 +102,15 @@ def test_canceling_cloud_preview_never_starts_parser(monkeypatch, tmp_path):
         result, cloud_request_factory=lambda: request,
         cloud_parser=lambda item: (parsed.append(item) or result),
     )
-    monkeypatch.setattr(QDialog, "exec", lambda _self: QDialog.DialogCode.Rejected)
+    def inspect_then_cancel(preview):
+        editors = preview.findChildren(QPlainTextEdit)
+        assert len(editors) == 2
+        assert editors[0].toPlainText() == request.user_text
+        assert editors[1].isHidden()
+        assert "会离开本机" in preview.findChild(type(preview.layout().itemAt(0).widget())).text()
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(QDialog, "exec", inspect_then_cancel)
     dialog._start_cloud()
     app.processEvents()
     assert parsed == []

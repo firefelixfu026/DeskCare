@@ -80,14 +80,14 @@ class MainWindow(QMainWindow):
 
         self.navigation = QListWidget()
         self.navigation.setObjectName("navigation")
-        for title, subtitle in (("今日", "任务与当前建议"), ("使用统计", "有限活动估计"), ("状态与报告", "事实与数据缺口"), ("设置与隐私", "授权与控制")):
+        for title, subtitle in (("今日", "任务与休息建议"), ("使用统计", "电脑使用情况"), ("状态与报告", "回顾与小结"), ("设置与隐私", "由你选择和管理")):
             item = QListWidgetItem(f"{title}\n{subtitle}")
             item.setSizeHint(QSize(200, 62))
             self.navigation.addItem(item)
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation)
         sidebar_layout.addStretch()
-        version = QLabel("M8 · 本地优先 · 可交付运行")
+        version = QLabel("记录留在本机 · 隐私由你掌控")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
@@ -171,11 +171,11 @@ class MainWindow(QMainWindow):
 
     def _sync_header(self, enabled: bool, paused: bool) -> None:
         if not enabled:
-            text, tone = "监测未开启", "muted"
+            text, tone = "电脑使用统计未开启", "muted"
         elif paused:
-            text, tone = "监测已暂停", "warning"
+            text, tone = "电脑使用统计已暂停", "warning"
         else:
-            text, tone = "监测运行中", "active"
+            text, tone = "电脑使用统计已开启", "active"
         self.header_state.setText(f"●  {text}")
         self.header_state.setProperty("tone", tone)
         self.header_state.style().unpolish(self.header_state)

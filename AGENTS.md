@@ -1,4 +1,4 @@
-# AGENTS.md — DeskCare 2.0 开发指令（放仓库根目录）
+# AGENTS.md — DeskCare 开发指令（放仓库根目录）
 
 ## 产品目标与权威需求
 

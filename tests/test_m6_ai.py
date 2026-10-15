@@ -456,12 +456,16 @@ def test_local_ai_consent_updates_report_button(tmp_path):
     report = window.pages.widget(2)
     settings = window.pages.widget(3)
     assert report.ai_report_button.isEnabled() is False
+    assert settings.local_ai_config.isHidden()
+    settings.local_ai_advanced_button.setChecked(True)
+    assert not settings.local_ai_config.isHidden()
 
     settings.local_ai.setChecked(True)
     app.processEvents()
     assert local_ai.enabled is True
     assert report.ai_report_button.isEnabled() is True
     assert repository.get_consent("local_ai") is True
+    settings.local_ai_advanced_button.setChecked(True)
 
     settings.probe_local_ai.click()
     for _ in range(100):
@@ -479,7 +483,7 @@ def test_local_ai_consent_updates_report_button(tmp_path):
             break
         QThread.msleep(5)
     assert report._report_ai_thread is None
-    assert "回退本地规则/模板" in report.report_sources.text()
+    assert "本机 AI 暂时不可用" in report.report_sources.text()
 
     settings.local_ai.setChecked(False)
     app.processEvents()

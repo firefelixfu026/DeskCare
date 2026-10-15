@@ -79,7 +79,7 @@ class TaskFormDialog(QDialog):
         form = QFormLayout()
         form.addRow("标题", self.title_edit)
         form.addRow("截止时间", self.due_edit)
-        form.addRow("预计分钟", self.estimate)
+        form.addRow("预计用时（分钟）", self.estimate)
         self.error = QLabel()
         self.error.setWordWrap(True)
         self.error.setStyleSheet("color: #B44A42;")
@@ -123,7 +123,7 @@ class ImportPreviewDialog(QDialog):
         self.setWindowTitle(f"预览导入：{result.source_name}")
         self.setMinimumSize(820, 520)
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["任务标题（可编辑）", "截止时间（可编辑）", "预计分钟", "解析提示"])
+        self.table.setHorizontalHeaderLabels(["任务（可编辑）", "截止时间（可编辑）", "预计用时", "备注"])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         for draft in result.drafts:
@@ -135,7 +135,7 @@ class ImportPreviewDialog(QDialog):
         self.table.itemChanged.connect(lambda _item: self._refresh_validation())
         remove = QPushButton("移除选中项")
         remove.clicked.connect(self._remove_selected)
-        self.ai_button = QPushButton("本地 AI 提议")
+        self.ai_button = QPushButton("本机 AI 帮我整理")
         self.ai_button.setEnabled(ai_parser is not None)
         self.ai_button.setToolTip(
             "只把本次主动选择的文件发送到本机回环地址；结果仍需编辑并确认。"
@@ -144,9 +144,9 @@ class ImportPreviewDialog(QDialog):
         )
         if ai_parser is not None:
             self.ai_button.clicked.connect(self._start_ai)
-        self.cloud_button = QPushButton("云端 AI 提议")
+        self.cloud_button = QPushButton("联网 AI 帮我整理")
         self.cloud_button.setEnabled(cloud_request_factory is not None and cloud_parser is not None)
-        self.cloud_button.setToolTip("每次请求前展示完整 JSON 正文；确认后才会向配置的 HTTPS 服务发送所选清单。")
+        self.cloud_button.setToolTip("发送前会展示任务清单和服务商；只有你确认后才会发送。")
         if self.cloud_button.isEnabled():
             self.cloud_button.clicked.connect(self._start_cloud)
         self.confirm = QPushButton("确认导入")
@@ -161,7 +161,7 @@ class ImportPreviewDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(self.confirm)
         root = QVBoxLayout(self)
-        root.addWidget(QLabel("以下只是候选草稿。编辑或移除不确定内容后，点击‘确认导入’才会写入本地任务库。"))
+        root.addWidget(QLabel("下面是待确认的任务草稿。你可以修改或删除；点击“确认导入”后才会保存。"))
         root.addWidget(self.issue_label)
         root.addWidget(self.table)
         root.addLayout(buttons)
@@ -179,20 +179,29 @@ class ImportPreviewDialog(QDialog):
         if request is None:
             return
         preview = QDialog(self)
-        preview.setWindowTitle("发送前预览 — 云端 AI")
+        preview.setWindowTitle("发送前确认 — 联网 AI")
         preview.setMinimumSize(700, 520)
         layout = QVBoxLayout(preview)
         notice = QLabel(
-            f"以下请求将发送到：{request.endpoint}\n模型：{request.model}\n"
-            "只包含下方 JSON 正文；不包含 API Key。清单文本会离开本机并交由该服务处理。"
-            "活动统计、应用明细、BodyLog 和报告不会随请求发送。"
+            f"将发送给：{request.endpoint}\n模型：{request.model}\n"
+            "下面只显示你刚选择的清单内容。确认后，这些文字会离开本机并交由该服务处理；可能产生费用。"
+            "电脑使用统计和状态打卡不会发送，服务密钥也不会包含在请求内容中。"
         )
         notice.setWordWrap(True)
         layout.addWidget(notice)
-        body = QPlainTextEdit()
-        body.setReadOnly(True)
-        body.setPlainText(request.preview())
-        layout.addWidget(body, 1)
+        selected_text = QPlainTextEdit()
+        selected_text.setReadOnly(True)
+        selected_text.setPlainText(request.user_text)
+        layout.addWidget(selected_text, 1)
+        details_toggle = QPushButton("查看完整请求详情（高级）")
+        details_toggle.setCheckable(True)
+        layout.addWidget(details_toggle)
+        request_details = QPlainTextEdit()
+        request_details.setReadOnly(True)
+        request_details.setPlainText(request.preview())
+        request_details.setVisible(False)
+        details_toggle.toggled.connect(request_details.setVisible)
+        layout.addWidget(request_details, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("确认发送")
         buttons.accepted.connect(preview.accept)
@@ -200,14 +209,14 @@ class ImportPreviewDialog(QDialog):
         layout.addWidget(buttons)
         if preview.exec() != QDialog.DialogCode.Accepted:
             return
-        self._start_parser(lambda: self._cloud_parser(request), "云端 AI 处理中…",
-                           "已提交本次明确预览的任务文本；原规则草稿仍保留到结果校验完成。")
+        self._start_parser(lambda: self._cloud_parser(request), "正在请联网 AI 整理…",
+                           "已发送你刚刚确认的任务清单；原有草稿仍保留。")
 
     def _start_ai(self) -> None:
         if self._ai_parser is None or self._ai_thread is not None:
             return
-        self._start_parser(self._ai_parser, "本地 AI 处理中…",
-                           "正在请求本机回环模型；窗口仍可操作。规则草稿会保留到模型结果通过校验。")
+        self._start_parser(self._ai_parser, "正在请本机 AI 整理…",
+                           "正在使用这台电脑上的 AI；窗口仍可操作，原有草稿会保留。")
 
     def _start_parser(self, parser: Callable[[], ImportResult], busy_text: str, status: str) -> None:
         self._ai_generation += 1
@@ -235,7 +244,7 @@ class ImportPreviewDialog(QDialog):
             return
         if error or not isinstance(result, ImportResult):
             self._refresh_validation()
-            message = error or "本机模型输出无法校验；已保留规则解析草稿。"
+            message = error or "AI 暂时没有给出可用结果；已保留原有草稿。"
             self.issue_label.setText(f"{message} 当前规则草稿仍可编辑或确认。")
             return
         self.import_result = result
@@ -249,7 +258,7 @@ class ImportPreviewDialog(QDialog):
     def _on_ai_thread_finished(self) -> None:
         self._ai_thread = None
         self._ai_worker = None
-        self.ai_button.setText("本地 AI 提议")
+        self.ai_button.setText("本机 AI 帮我整理")
         self.ai_button.setEnabled(self._ai_parser is not None)
         self.cloud_button.setEnabled(self._cloud_request_factory is not None and self._cloud_parser is not None)
 

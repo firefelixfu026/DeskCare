@@ -148,3 +148,24 @@ def test_activity_suggestion_preference_is_saved(tmp_path):
 
     assert repository.get_setting("activity_tips_enabled") == "false"
     page.close()
+
+
+def test_usage_categories_are_displayed_in_chinese(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from deskcare.sensors.fake import FakeActivityProvider
+    from deskcare.ui.pages import UsagePage
+
+    QApplication.instance() or QApplication([])
+    repository = UsageRepository(tmp_path / "deskcare.sqlite3")
+    repository.add_usage(date.today(), "BROWSER", active_seconds=24)
+    repository.add_usage(date.today(), "MEETING", active_seconds=36)
+    controller = MonitoringController(FakeActivityProvider(), initially_enabled=True)
+    collector = ActivityCollector(controller, repository)
+    page = UsagePage(controller, collector)
+
+    text = page.category_value.text()
+    assert "浏览器：0.4 分钟" in text
+    assert "会议与通讯：0.6 分钟" in text
+    assert "BROWSER" not in text and "MEETING" not in text
+    page.close()

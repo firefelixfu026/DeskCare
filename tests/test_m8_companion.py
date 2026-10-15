@@ -52,11 +52,12 @@ def test_companion_quick_add_and_manual_transcript_confirmation(tmp_path):
     from deskcare.ui.companion import CompanionWindow
 
     _app()
-    repo = UsageRepository(tmp_path / "deskcare.sqlite3")
+    database_path = tmp_path / "deskcare.sqlite3"
+    repo = UsageRepository(database_path)
     tasks = TaskService(repo)
     companion = CompanionWindow(tasks, repository=repo)
     companion.task_input.setText("整理实验数据")
-    companion._add_task()
+    companion.add_task_button.click()
     assert [task.title for task in tasks.list_today()] == ["整理实验数据"]
 
     companion.transcript.setText("准备比赛演示")
@@ -65,6 +66,8 @@ def test_companion_quick_add_and_manual_transcript_confirmation(tmp_path):
     created = tasks.list_today()
     assert [task.title for task in created] == ["整理实验数据", "准备比赛演示"]
     assert all(task.status is TaskStatus.TODO for task in created)
+    reloaded = TaskService(UsageRepository(database_path))
+    assert [task.title for task in reloaded.list_today()] == ["整理实验数据", "准备比赛演示"]
     companion.close()
 
 
@@ -119,7 +122,31 @@ def test_companion_mode_selection_is_explicit_and_does_not_touch_monitoring(tmp_
     reminder = Reminder()
     controller = MonitoringController(FakeActivityProvider())
     companion = CompanionWindow(reminder_coordinator=reminder, repository=repo)
+    assert companion.mode.count() == 5
+    assert companion.mode.view().model().rowCount() == 5
+    assert companion.mode.currentData() == "normal"
+    assert "QComboBox QAbstractItemView" in companion.styleSheet()
+    assert "color:#24312E" in companion.styleSheet()
     companion.mode.setCurrentIndex(companion.mode.findData("meeting"))
     assert reminder.mode == "meeting"
     assert controller.enabled is False
+    companion.close()
+
+
+def test_companion_says_why_voice_input_is_not_ready_and_manual_add_still_works(tmp_path, monkeypatch):
+    import deskcare.ui.companion as companion_module
+    from deskcare.services.task_service import TaskService
+    from deskcare.storage.database import UsageRepository
+    from deskcare.ui.companion import CompanionWindow
+
+    _app()
+    repository = UsageRepository(tmp_path / "deskcare.sqlite3")
+    tasks = TaskService(repository)
+    companion = CompanionWindow(tasks, repository=repository)
+    monkeypatch.setattr(companion_module.importlib.util, "find_spec", lambda _name: object())
+    companion.voice_button.pressed.emit()
+    assert "还没有设置语音包" in companion.recording_hint.text()
+    companion.task_input.setText("我仍可手动添加")
+    companion.add_task_button.click()
+    assert [task.title for task in tasks.list_today()] == ["我仍可手动添加"]
     companion.close()
