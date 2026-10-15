@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QMessageBox,
+    QInputDialog,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -112,12 +113,13 @@ class _LocalModelProbeWorker(QObject):
 
 
 class TodayPage(QWidget):
-    def __init__(self, controller, task_service=None, reminder_coordinator=None, local_ai_service=None, repository=None, parent=None) -> None:
+    def __init__(self, controller, task_service=None, reminder_coordinator=None, local_ai_service=None, repository=None, cloud_ai_service=None, parent=None) -> None:
         super().__init__(parent)
         self.controller = controller
         self.task_service = task_service
         self.reminder_coordinator = reminder_coordinator
         self.local_ai_service = local_ai_service
+        self.cloud_ai_service = cloud_ai_service
         self.repository = repository
         self._tasks: list[Task] = []
         root = QVBoxLayout(self)
@@ -271,7 +273,16 @@ class TodayPage(QWidget):
         ai_parser = None
         if self.local_ai_service is not None and self.local_ai_service.enabled:
             ai_parser = lambda selected_path=path: self.local_ai_service.parse_path(selected_path)
-        dialog = ImportPreviewDialog(result, self, ai_parser=ai_parser)
+        cloud_request_factory = None
+        cloud_parser = None
+        if self.cloud_ai_service is not None and self.cloud_ai_service.enabled:
+            cloud_request_factory = lambda selected_path=path: self.cloud_ai_service.prepare(
+                Path(selected_path).read_bytes(), Path(selected_path).name
+            )
+            cloud_parser = self.cloud_ai_service.parse
+        dialog = ImportPreviewDialog(result, self, ai_parser=ai_parser,
+                                     cloud_request_factory=cloud_request_factory,
+                                     cloud_parser=cloud_parser)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
         try:
@@ -689,13 +700,14 @@ class SettingsPage(QWidget):
     all_data_cleared = Signal()
     companion_visibility_changed = Signal(bool)
 
-    def __init__(self, config_store, controller, collector=None, bodylog_service=None, local_ai_service=None, personalization_service=None, repository=None, parent=None) -> None:
+    def __init__(self, config_store, controller, collector=None, bodylog_service=None, local_ai_service=None, personalization_service=None, repository=None, cloud_ai_service=None, parent=None) -> None:
         super().__init__(parent)
         self.config_store = config_store
         self.controller = controller
         self.collector = collector
         self.bodylog_service: BodyLogService | None = bodylog_service
         self.local_ai_service = local_ai_service
+        self.cloud_ai_service = cloud_ai_service
         self.personalization_service = personalization_service
         self.repository = repository or (collector.repository if collector is not None else None)
         self._local_ai_probe_thread: QThread | None = None
@@ -830,6 +842,50 @@ class SettingsPage(QWidget):
         local_ai_layout.addWidget(self.local_ai_config_feedback)
         root.addWidget(local_ai_config)
 
+        cloud_card = QFrame()
+        cloud_card.setObjectName("card")
+        cloud_layout = QVBoxLayout(cloud_card)
+        cloud_layout.setContentsMargins(14, 10, 14, 10)
+        cloud_layout.addWidget(label("可选云端任务解析（默认关闭）", "cardTitle"))
+        cloud_layout.addWidget(label(
+            "仅解析你主动选择的任务清单。开启授权不自动联网；每次发送前逐次预览完整 JSON 正文并确认。"
+            "不发送活动/应用统计、BodyLog 或报告。关闭授权会删除已存 API Key。", "mutedText"
+        ))
+        self.cloud_ai = QCheckBox("允许将我主动选择的任务清单发送到配置的云端 AI 服务")
+        self.cloud_ai.setChecked(cloud_ai_service.enabled if cloud_ai_service is not None else False)
+        self.cloud_ai.setEnabled(cloud_ai_service is not None)
+        self.cloud_ai.toggled.connect(self._toggle_cloud_ai)
+        cloud_layout.addWidget(self.cloud_ai)
+        self.cloud_endpoint = QLineEdit(cloud_ai_service.endpoint if cloud_ai_service else "https://api.openai.com/v1/chat/completions")
+        self.cloud_endpoint.setPlaceholderText("https://…/v1/chat/completions")
+        cloud_layout.addWidget(self.cloud_endpoint)
+        cloud_model_row = QHBoxLayout()
+        self.cloud_model = QLineEdit(cloud_ai_service.model if cloud_ai_service else "")
+        self.cloud_model.setPlaceholderText("模型名称（由服务商提供）")
+        cloud_model_row.addWidget(self.cloud_model, 1)
+        self.save_cloud_config = QPushButton("保存云端配置")
+        self.save_cloud_config.clicked.connect(self._save_cloud_config)
+        cloud_model_row.addWidget(self.save_cloud_config)
+        cloud_layout.addLayout(cloud_model_row)
+        key_row = QHBoxLayout()
+        self.cloud_key_status = label(
+            "API Key 已保存在 Windows 凭据管理器。" if cloud_ai_service and cloud_ai_service.has_key
+            else "尚未保存 API Key。", "mutedText"
+        )
+        key_row.addWidget(self.cloud_key_status, 1)
+        self.save_cloud_key = QPushButton("输入/更新 API Key")
+        self.save_cloud_key.setEnabled(cloud_ai_service is not None)
+        self.save_cloud_key.clicked.connect(self._save_cloud_key)
+        key_row.addWidget(self.save_cloud_key)
+        self.delete_cloud_key = QPushButton("删除 API Key")
+        self.delete_cloud_key.setEnabled(cloud_ai_service is not None and cloud_ai_service.has_key)
+        self.delete_cloud_key.clicked.connect(self._delete_cloud_key)
+        key_row.addWidget(self.delete_cloud_key)
+        cloud_layout.addLayout(key_row)
+        self.cloud_feedback = label("Key 不写入 SQLite、日志或导出。所有请求使用 HTTPS。", "mutedText")
+        cloud_layout.addWidget(self.cloud_feedback)
+        root.addWidget(cloud_card)
+
         self.pause_button = QPushButton("暂停监测" if controller.enabled else "监测尚未开启")
         self.pause_button.setEnabled(controller.enabled)
         self.pause_button.clicked.connect(controller.toggle_paused)
@@ -893,6 +949,79 @@ class SettingsPage(QWidget):
         self.config_store.config.local_ai_enabled = enabled
         if self.local_ai_service is not None:
             self.local_ai_service.set_enabled(enabled)
+
+    def _toggle_cloud_ai(self, enabled: bool) -> None:
+        if self.cloud_ai_service is None:
+            return
+        if enabled:
+            answer = QMessageBox.question(
+                self, "单独授权云端任务解析",
+                "授权后，只有你在任务导入窗口点击‘云端 AI 提议’，查看每次完整请求预览并选择确认，所选任务清单才会通过 HTTPS 发给你配置的服务。"
+                "活动/应用统计、BodyLog、报告不会发送。关闭此授权会删除本地保存的 API Key。现在授权吗？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                self.cloud_ai.blockSignals(True)
+                self.cloud_ai.setChecked(False)
+                self.cloud_ai.blockSignals(False)
+                return
+        try:
+            self.cloud_ai_service.set_enabled(enabled)
+        except Exception as exc:
+            self.cloud_ai.blockSignals(True)
+            # Revocation takes effect before credential deletion is attempted;
+            # never re-check the UI into an apparently authorized state.
+            self.cloud_ai.setChecked(False)
+            self.cloud_ai.blockSignals(False)
+            QMessageBox.warning(
+                self, "云端 AI 授权状态",
+                ("云端授权已关闭，但 Windows 凭据删除失败。请在 Windows 凭据管理器中检查并删除 DeskCare/CloudAI/OpenAICompatible。\n\n" + str(exc))
+                if not enabled else str(exc),
+            )
+            return
+        self._sync_cloud_key_status()
+
+    def _save_cloud_config(self) -> None:
+        if self.cloud_ai_service is None:
+            return
+        try:
+            self.cloud_ai_service.configure(self.cloud_endpoint.text(), self.cloud_model.text())
+        except ValueError as exc:
+            QMessageBox.warning(self, "无法保存云端配置", str(exc))
+            return
+        self.cloud_feedback.setText("Endpoint 和模型名称已保存到本地；保存配置不会联网。")
+
+    def _save_cloud_key(self) -> None:
+        if self.cloud_ai_service is None or not self.cloud_ai_service.enabled:
+            QMessageBox.information(self, "需要授权", "请先单独开启云端 AI 授权。")
+            return
+        secret, accepted = QInputDialog.getText(
+            self, "保存 API Key", "API Key（仅保存到 Windows 凭据管理器）:", QLineEdit.EchoMode.Password
+        )
+        if not accepted:
+            return
+        try:
+            self.cloud_ai_service.save_key(secret)
+        except Exception as exc:
+            QMessageBox.warning(self, "无法保存 API Key", str(exc))
+            return
+        self._sync_cloud_key_status()
+
+    def _delete_cloud_key(self) -> None:
+        if self.cloud_ai_service is None:
+            return
+        try:
+            self.cloud_ai_service.credentials.delete()
+        except Exception as exc:
+            QMessageBox.warning(self, "无法删除 API Key", str(exc))
+            return
+        self._sync_cloud_key_status()
+
+    def _sync_cloud_key_status(self) -> None:
+        present = self.cloud_ai_service is not None and self.cloud_ai_service.has_key
+        self.cloud_key_status.setText("API Key 已保存在 Windows 凭据管理器。" if present else "尚未保存 API Key。")
+        self.delete_cloud_key.setEnabled(present)
 
     def _toggle_personalization(self, enabled: bool) -> None:
         self.config_store.config.reminder_personalization_enabled = enabled
@@ -1036,6 +1165,8 @@ class SettingsPage(QWidget):
             self.bodylog_service.set_enabled(False)
         if self.local_ai_service is not None:
             self.local_ai_service.set_enabled(False)
+        if self.cloud_ai_service is not None:
+            self.cloud_ai_service.set_enabled(False)
         if self.personalization_service is not None:
             self.personalization_service.reset_to_default()
         if self.collector is not None:
@@ -1043,6 +1174,8 @@ class SettingsPage(QWidget):
         self.controller.set_enabled(False)
         if self.local_ai_service is not None:
             self.local_ai_service.reset_configuration()
+        if self.cloud_ai_service is not None:
+            self.cloud_ai_service.reset_configuration()
         self.collector.repository.clear_all_data()
         self.collector.reset_session()
         self.collector.notify()
@@ -1054,6 +1187,10 @@ class SettingsPage(QWidget):
         self.app_names.blockSignals(True)
         self.app_names.setChecked(False)
         self.app_names.blockSignals(False)
+        self.cloud_ai.blockSignals(True)
+        self.cloud_ai.setChecked(False)
+        self.cloud_ai.blockSignals(False)
+        self._sync_cloud_key_status()
         self.clear_usage_feedback.setText("已清除全部 DeskCare 本地数据和授权状态。")
         self.clear_wellness_feedback.setText("已清除全部 DeskCare 本地数据；授权状态已关闭。")
         self.all_data_cleared.emit()

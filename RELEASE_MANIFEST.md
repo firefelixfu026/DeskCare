@@ -1,6 +1,22 @@
-# DeskCare M8｜Windows 发布清单
+# DeskCare Windows 发布清单
 
 生成日期：2026-10-15（Asia/Shanghai）
+
+## M9 发布包
+
+| 文件 | 用途 | 大小 | SHA-256 |
+| --- | --- | ---: | --- |
+| `release/DeskCare-M9-windows-x64-portable.zip` | 推荐的 onedir 便携包，完整解压后运行 `DeskCare/DeskCare.exe` | 78,129,296 bytes | `8F1D3CF88E191F735B8A5E38EC2662717E4C9119479795079177F2CDFF60406A` |
+| `release/DeskCare-M9-windows-x64-onefile.zip` | 单文件备选包，首次自解压较慢 | 75,400,392 bytes | `AD34AB025141D12A9952B627ABDC04A59842BE4EC48F635D6CFD43B56FA394B8` |
+
+## M9 构建与验收
+
+- Windows 11，Python 3.12.7，PySide6 6.12.0，PyInstaller 6.22.3，Vosk 0.3.45 runtime（不含语音模型）。
+- 完整自动化回归：**88 passed**；`compileall`、`pip check` 通过。
+- onedir 与 onefile 均经 `scripts/build_windows.ps1 -Verify` / `-OneFile -Verify` 启动验收；两个 ZIP 解压后也分别启动验收通过。
+- 未使用真实 API Key、Windows Credential Manager 真实凭据或真实云端服务；请按 `docs/M9_云端任务AI隐私与验收.md` 自愿验收。
+
+M9 源码随 GitHub 仓库发布；便携/单文件包 SHA-256 已追加在 `release/SHA256SUMS.txt`。
 
 ## M8 发布包
 

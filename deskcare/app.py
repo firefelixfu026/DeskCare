@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication
 
 from deskcare.config import ConfigStore
 from deskcare.ai.optional_local_llm import LocalAIService
+from deskcare.ai.cloud_task_assistant import CloudTaskAssistant
 from deskcare.sensors.fake import FakeActivityProvider
 from deskcare.sensors.windows import WindowsActivityProvider
 from deskcare.services.activity_service import ActivityCollector
@@ -37,7 +38,7 @@ def create_application(argv: list[str] | None = None):
     qt_argv = [item for item in raw_argv if item != "--demo"] or ["deskcare"]
     qt_app = QApplication.instance() or QApplication(qt_argv)
     qt_app.setApplicationName("DeskCare")
-    qt_app.setApplicationVersion("2.0.0-m8")
+    qt_app.setApplicationVersion("2.0.0-m9")
     instance_guard = SingleInstanceGuard(parent=qt_app)
     if not instance_guard.primary:
         return qt_app, None, None
@@ -81,6 +82,7 @@ def create_application(argv: list[str] | None = None):
     bodylog_service = BodyLogService(repository, initially_wellness_enabled)
     report_service = LocalReportService(repository)
     local_ai_service = LocalAIService(repository, initially_local_ai_enabled)
+    cloud_ai_service = CloudTaskAssistant(repository)
     controller.subscribe(
         lambda enabled, _paused: repository.set_consent("activity_monitoring", enabled)
     )
@@ -95,6 +97,7 @@ def create_application(argv: list[str] | None = None):
         report_service,
         local_ai_service,
         personalization_service,
+        cloud_ai_service,
     )
     instance_guard.show_requested.connect(
         lambda: (window.show(), window.raise_(), window.activateWindow())

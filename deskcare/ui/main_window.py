@@ -33,6 +33,7 @@ class MainWindow(QMainWindow):
         report_service=None,
         local_ai_service=None,
         personalization_service=None,
+        cloud_ai_service=None,
     ) -> None:
         super().__init__()
         self.config_store = config_store
@@ -44,6 +45,7 @@ class MainWindow(QMainWindow):
         self.bodylog_service = bodylog_service
         self.report_service = report_service
         self.local_ai_service = local_ai_service
+        self.cloud_ai_service = cloud_ai_service
         self.personalization_service = personalization_service
         self._allow_close = False
         self._shutting_down = False
@@ -110,6 +112,7 @@ class MainWindow(QMainWindow):
             self.reminder_coordinator,
             self.local_ai_service,
             self.repository,
+            self.cloud_ai_service,
         )
         self.pages.addWidget(self.today_page)
         self.usage_page = UsagePage(self.monitoring_controller, self.activity_collector)
@@ -130,6 +133,7 @@ class MainWindow(QMainWindow):
             self.local_ai_service,
             self.personalization_service,
             self.repository,
+            self.cloud_ai_service,
         )
         self.settings_page.companion_visibility_changed.connect(self.set_companion_visible)
         self.settings_page.all_data_cleared.connect(self._refresh_after_data_clear)

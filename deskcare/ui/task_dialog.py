@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QSpinBox,
     QTableWidget,
@@ -38,7 +39,11 @@ class _TaskAIWorker(QObject):
     def run(self) -> None:
         try:
             result = self.parser()
-        except Exception:
+        except Exception as exc:
+            from deskcare.ai.cloud_task_assistant import CloudAIError
+            if isinstance(exc, CloudAIError):
+                self.finished.emit(self.generation, None, str(exc))
+                return
             self.finished.emit(
                 self.generation,
                 None,
@@ -104,10 +109,14 @@ class TaskFormDialog(QDialog):
 class ImportPreviewDialog(QDialog):
     """Editable draft preview; the dialog never writes to the database."""
 
-    def __init__(self, result: ImportResult, parent=None, ai_parser: Callable[[], ImportResult] | None = None) -> None:
+    def __init__(self, result: ImportResult, parent=None, ai_parser: Callable[[], ImportResult] | None = None,
+                 cloud_request_factory: Callable[[], object] | None = None,
+                 cloud_parser: Callable[[object], ImportResult] | None = None) -> None:
         super().__init__(parent)
         self.import_result = result
         self._ai_parser = ai_parser
+        self._cloud_request_factory = cloud_request_factory
+        self._cloud_parser = cloud_parser
         self._ai_generation = 0
         self._ai_thread: QThread | None = None
         self._ai_worker: _TaskAIWorker | None = None
@@ -135,6 +144,11 @@ class ImportPreviewDialog(QDialog):
         )
         if ai_parser is not None:
             self.ai_button.clicked.connect(self._start_ai)
+        self.cloud_button = QPushButton("云端 AI 提议")
+        self.cloud_button.setEnabled(cloud_request_factory is not None and cloud_parser is not None)
+        self.cloud_button.setToolTip("每次请求前展示完整 JSON 正文；确认后才会向配置的 HTTPS 服务发送所选清单。")
+        if self.cloud_button.isEnabled():
+            self.cloud_button.clicked.connect(self._start_cloud)
         self.confirm = QPushButton("确认导入")
         self.confirm.clicked.connect(self._accept)
         cancel = QPushButton("取消")
@@ -142,6 +156,7 @@ class ImportPreviewDialog(QDialog):
         buttons = QHBoxLayout()
         buttons.addWidget(remove)
         buttons.addWidget(self.ai_button)
+        buttons.addWidget(self.cloud_button)
         buttons.addStretch()
         buttons.addWidget(cancel)
         buttons.addWidget(self.confirm)
@@ -152,13 +167,53 @@ class ImportPreviewDialog(QDialog):
         root.addLayout(buttons)
         self._refresh_validation()
 
+    def _start_cloud(self) -> None:
+        if self._cloud_request_factory is None or self._cloud_parser is None or self._ai_thread is not None:
+            return
+        try:
+            request = self._cloud_request_factory()
+        except Exception as exc:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "无法准备云端请求", str(exc))
+            return
+        if request is None:
+            return
+        preview = QDialog(self)
+        preview.setWindowTitle("发送前预览 — 云端 AI")
+        preview.setMinimumSize(700, 520)
+        layout = QVBoxLayout(preview)
+        notice = QLabel(
+            f"以下请求将发送到：{request.endpoint}\n模型：{request.model}\n"
+            "只包含下方 JSON 正文；不包含 API Key。清单文本会离开本机并交由该服务处理。"
+            "活动统计、应用明细、BodyLog 和报告不会随请求发送。"
+        )
+        notice.setWordWrap(True)
+        layout.addWidget(notice)
+        body = QPlainTextEdit()
+        body.setReadOnly(True)
+        body.setPlainText(request.preview())
+        layout.addWidget(body, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("确认发送")
+        buttons.accepted.connect(preview.accept)
+        buttons.rejected.connect(preview.reject)
+        layout.addWidget(buttons)
+        if preview.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._start_parser(lambda: self._cloud_parser(request), "云端 AI 处理中…",
+                           "已提交本次明确预览的任务文本；原规则草稿仍保留到结果校验完成。")
+
     def _start_ai(self) -> None:
         if self._ai_parser is None or self._ai_thread is not None:
             return
+        self._start_parser(self._ai_parser, "本地 AI 处理中…",
+                           "正在请求本机回环模型；窗口仍可操作。规则草稿会保留到模型结果通过校验。")
+
+    def _start_parser(self, parser: Callable[[], ImportResult], busy_text: str, status: str) -> None:
         self._ai_generation += 1
         generation = self._ai_generation
         thread = QThread(self)
-        worker = _TaskAIWorker(generation, self._ai_parser)
+        worker = _TaskAIWorker(generation, parser)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(self._on_ai_finished)
@@ -169,10 +224,9 @@ class ImportPreviewDialog(QDialog):
         self._ai_thread = thread
         self._ai_worker = worker
         self.ai_button.setEnabled(False)
-        self.ai_button.setText("本地 AI 处理中…")
-        self.issue_label.setText(
-            "正在请求本机回环模型；窗口仍可操作。规则草稿会保留到模型结果通过校验。"
-        )
+        self.cloud_button.setEnabled(False)
+        self.ai_button.setText(busy_text)
+        self.issue_label.setText(status)
         thread.start()
 
     @Slot(int, object, str)
@@ -197,6 +251,7 @@ class ImportPreviewDialog(QDialog):
         self._ai_worker = None
         self.ai_button.setText("本地 AI 提议")
         self.ai_button.setEnabled(self._ai_parser is not None)
+        self.cloud_button.setEnabled(self._cloud_request_factory is not None and self._cloud_parser is not None)
 
     def reject(self) -> None:
         # A timed-out local request cannot be force-killed safely. Let its
