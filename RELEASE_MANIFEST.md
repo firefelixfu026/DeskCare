@@ -8,6 +8,7 @@
 | --- | --- | ---: | --- |
 | `release/DeskCare-M9-windows-x64-portable.zip` | 推荐的 onedir 便携包，完整解压后运行 `DeskCare/DeskCare.exe` | 78,129,296 bytes | `8F1D3CF88E191F735B8A5E38EC2662717E4C9119479795079177F2CDFF60406A` |
 | `release/DeskCare-M9-windows-x64-onefile.zip` | 单文件备选包，首次自解压较慢 | 75,400,392 bytes | `AD34AB025141D12A9952B627ABDC04A59842BE4EC48F635D6CFD43B56FA394B8` |
+| `release/DeskCare-M9-source.zip` | Git 源码快照，含代码、测试、脚本与文档 | 985,866 bytes | `768F305E565B9B43D57A402A8B39AB501F690C5503849B6562F1268F53C85811` |
 
 ## M9 构建与验收
 
@@ -16,7 +17,7 @@
 - onedir 与 onefile 均经 `scripts/build_windows.ps1 -Verify` / `-OneFile -Verify` 启动验收；两个 ZIP 解压后也分别启动验收通过。
 - 未使用真实 API Key、Windows Credential Manager 真实凭据或真实云端服务；请按 `docs/M9_云端任务AI隐私与验收.md` 自愿验收。
 
-M9 源码随 GitHub 仓库发布；便携/单文件包 SHA-256 已追加在 `release/SHA256SUMS.txt`。
+M9 源码 ZIP 对应提交 `f66b9f7`；三个 M9 包的 SHA-256 已追加在 `release/SHA256SUMS.txt`。
 
 ## M8 发布包
 

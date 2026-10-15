@@ -298,6 +298,7 @@
 - `python -m compileall -q deskcare tests`、`python -m pip check`：通过（pip 输出两条宿主全局 site-packages 残留无效分发 warning，但检查结果为 `No broken requirements found`）。
 - onedir 与 onefile 均使用 Windows 11 + Python 3.12.7 + PySide6 6.12.0 + PyInstaller 6.22.3 重新构建，并经自动启动验收通过；M9 portable/onefile ZIP 在独立目录解压后再次启动验收通过。
 - 发布 ZIP：portable `78,129,296 bytes` / SHA-256 `8F1D3CF88E191F735B8A5E38EC2662717E4C9119479795079177F2CDFF60406A`；onefile `75,400,392 bytes` / SHA-256 `AD34AB025141D12A9952B627ABDC04A59842BE4EC48F635D6CFD43B56FA394B8`；详见 `RELEASE_MANIFEST.md`。
+- 源码 ZIP：`985,866 bytes` / SHA-256 `768F305E565B9B43D57A402A8B39AB501F690C5503849B6562F1268F53C85811`，对应源码提交 `f66b9f7`；M9 实现提交 `1d75f9c`。
 - 当前环境未使用真实 Windows Credential Manager 凭据或真实云端 API；M9 的真实服务商兼容性、计费与数据政策仍由用户自行决定是否人工验收。
 
 ### 遗留问题
