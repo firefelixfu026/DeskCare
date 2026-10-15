@@ -115,11 +115,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify_windows_package.ps1 -E
 
 ### 已验证发布 ZIP
 
-`release\DeskCare-2.0.0-M6-windows-x64-portable.zip` 是推荐交付物；完整解压后运行 `DeskCare\DeskCare.exe`。`release\DeskCare-2.0.0-M6-windows-x64-onefile.zip` 是单文件备选。两个运行包均已在独立临时目录重新解压并通过启动验收。`release\DeskCare-2.0.0-M6-source.zip` 只包含可审阅源码、测试、公开资源、示例和文档，不含虚拟环境、构建缓存或用户数据库。版本、大小、SHA-256、已测环境和限制见 `RELEASE_MANIFEST.md`，校验值也保存在 `release\SHA256SUMS.txt`。
+`release\DeskCare-M7-windows-x64-portable.zip` 是推荐交付物；完整解压后运行 `DeskCare\DeskCare.exe`。`release\DeskCare-M7-windows-x64-onefile.zip` 是单文件备选。两个 M7 运行包均已在独立临时目录重新解压并通过启动验收。`release\DeskCare-M7-source.zip` 只包含可审阅源码、测试、公开资源、示例和文档，不含虚拟环境、构建缓存或用户数据库。版本、大小、SHA-256、已测环境和限制见 `RELEASE_MANIFEST.md`，源码位于 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)。
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\release\DeskCare-2.0.0-M6-windows-x64-portable.zip
-Get-FileHash -Algorithm SHA256 .\release\DeskCare-2.0.0-M6-windows-x64-onefile.zip
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-M7-windows-x64-portable.zip
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-M7-windows-x64-onefile.zip
 ```
 
 ### 可复现策略对照
