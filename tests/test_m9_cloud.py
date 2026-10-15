@@ -168,4 +168,3 @@ def test_cloud_transport_errors_are_sanitized_and_fallback_remains_separate(tmp_
         service.parse(request)
     assert "secret-token" not in str(error.value)
     assert "internal url" not in str(error.value)
-
