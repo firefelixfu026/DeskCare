@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import re
 from ctypes import wintypes
 from datetime import datetime
 from pathlib import PureWindowsPath
@@ -58,16 +59,33 @@ def _category_for_executable(executable: str | None) -> str:
     return _CATEGORY_MAP.get(stem, "OTHER")
 
 
+def _app_id_for_executable(executable: str | None) -> str | None:
+    """Return only a short, normalized executable stem when opted in."""
+
+    if not executable:
+        return None
+    stem = PureWindowsPath(executable).stem.casefold().strip()
+    if not stem or len(stem) > 64 or re.fullmatch(r"[\w.-]+", stem, flags=re.UNICODE) is None:
+        return None
+    return stem
+
+
 class WindowsActivityProvider:
     """Read one bounded sample from supported Win32 APIs."""
 
     is_demo = False
 
-    def __init__(self, idle_threshold_s: float = 60.0, include_category: bool = True) -> None:
+    def __init__(
+        self,
+        idle_threshold_s: float = 60.0,
+        include_category: bool = True,
+        include_app_name: bool = False,
+    ) -> None:
         if os.name != "nt":
             raise RuntimeError("WindowsActivityProvider is available only on Windows")
         self.idle_threshold_s = float(idle_threshold_s)
         self.include_category = include_category
+        self.include_app_name = bool(include_app_name)
         self._user32 = ctypes.WinDLL("user32", use_last_error=True)
         self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         self._user32.GetLastInputInfo.argtypes = [ctypes.POINTER(LASTINPUTINFO)]
@@ -88,6 +106,9 @@ class WindowsActivityProvider:
         self._kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
         self._kernel32.CloseHandle.restype = wintypes.BOOL
         self._last_category: str | None = None
+
+    def set_app_name_enabled(self, enabled: bool) -> None:
+        self.include_app_name = bool(enabled)
 
     def _idle_seconds(self) -> float:
         info = LASTINPUTINFO()
@@ -119,7 +140,9 @@ class WindowsActivityProvider:
 
     def read_sample(self) -> ActivitySample:
         idle_s = self._idle_seconds()
-        category = _category_for_executable(self._foreground_executable()) if self.include_category else None
+        executable = self._foreground_executable() if self.include_category or self.include_app_name else None
+        category = _category_for_executable(executable) if self.include_category else None
+        app_id = _app_id_for_executable(executable) if self.include_app_name else None
         changed = self._last_category is not None and category != self._last_category
         self._last_category = category
         state = ActivityKind.IDLE if idle_s >= self.idle_threshold_s else ActivityKind.ACTIVE
@@ -131,4 +154,5 @@ class WindowsActivityProvider:
             state=state,
             is_foreground_change=changed,
             observation_ok=True,
+            app_id=app_id,
         )

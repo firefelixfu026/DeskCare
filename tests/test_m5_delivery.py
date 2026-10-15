@@ -20,6 +20,7 @@ def test_clear_all_data_removes_records_and_consents(tmp_path):
     repository.set_consent("reminder_personalization", True)
     repository.set_setting("local_ai_model", "qwen2.5:7b")
     repository.add_usage(date(2026, 10, 14), "CODE", active_seconds=30)
+    repository.add_app_usage(date(2026, 10, 14), "code", 30)
     BodyLogService(repository, True).save_today(WellnessLevel.COMFORTABLE, date(2026, 10, 14))
 
     repository.clear_all_data()
@@ -29,6 +30,7 @@ def test_clear_all_data_removes_records_and_consents(tmp_path):
     assert repository.get_consent("reminder_personalization") is None
     assert repository.get_setting("local_ai_model") is None
     assert repository.usage_for_day(date(2026, 10, 14)) == []
+    assert repository.app_usage_for_period(date(2026, 10, 14), date(2026, 10, 14)) == []
     assert repository.wellness_for_day(date(2026, 10, 14)) is None
 
 

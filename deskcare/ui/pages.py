@@ -1,6 +1,6 @@
 """DeskCare pages with the M2 task surface and M1 activity statistics."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal
@@ -30,6 +30,30 @@ from deskcare.services.bodylog_service import BodyLogService
 from deskcare.services.reminder_service import REMINDER_RESPONSES, ReminderSnapshot
 from deskcare.services.report_engine import LocalReportService, ReportPeriod
 from deskcare.ui.task_dialog import ImportPreviewDialog, TaskFormDialog
+
+
+ACTIVITY_TIPS = (
+    "如果方便，可以站起来走几步；不想活动时也可以直接跳过。",
+    "也可以轻轻活动肩颈，动作以舒适为准；感觉不适就停下。",
+    "可以按自己的感觉换个姿势，或短暂看看远处。",
+)
+
+APP_DISPLAY_NAMES = {
+    "code": "Visual Studio Code",
+    "chrome": "Google Chrome",
+    "msedge": "Microsoft Edge",
+    "firefox": "Firefox",
+    "brave": "Brave",
+    "weixin": "微信",
+    "wechat": "微信",
+    "bilibili": "哔哩哔哩",
+    "qq": "QQ",
+    "teams": "Microsoft Teams",
+    "winword": "Microsoft Word",
+    "excel": "Microsoft Excel",
+    "powerpnt": "Microsoft PowerPoint",
+    "wps": "WPS Office",
+}
 
 
 def label(text: str, object_name: str = "") -> QLabel:
@@ -88,12 +112,13 @@ class _LocalModelProbeWorker(QObject):
 
 
 class TodayPage(QWidget):
-    def __init__(self, controller, task_service=None, reminder_coordinator=None, local_ai_service=None, parent=None) -> None:
+    def __init__(self, controller, task_service=None, reminder_coordinator=None, local_ai_service=None, repository=None, parent=None) -> None:
         super().__init__(parent)
         self.controller = controller
         self.task_service = task_service
         self.reminder_coordinator = reminder_coordinator
         self.local_ai_service = local_ai_service
+        self.repository = repository
         self._tasks: list[Task] = []
         root = QVBoxLayout(self)
         root.setSpacing(16)
@@ -135,9 +160,11 @@ class TodayPage(QWidget):
         self.reminder_title = label("可以考虑留一个短暂空档", "reminderTitle")
         self.reminder_body = label("", "reminderBody")
         self.reminder_reason = label("", "reminderReason")
+        self.activity_tip = label("", "activityTip")
         reminder_layout.addWidget(self.reminder_title)
         reminder_layout.addWidget(self.reminder_body)
         reminder_layout.addWidget(self.reminder_reason)
+        reminder_layout.addWidget(self.activity_tip)
         reminder_actions = QHBoxLayout()
         for response, text in (
             ("BREAK_NOW", "现在休息"),
@@ -304,6 +331,12 @@ class TodayPage(QWidget):
         response = REMINDER_RESPONSES.get(snapshot.response or "", "")
         suffix = f"最近选择：{response}" if response else ""
         self.reminder_reason.setText(f"依据：{reasons}。{suffix}")
+        show_tip = self.repository is None or self.repository.get_setting(
+            "activity_tips_enabled", "true"
+        ) == "true"
+        self.activity_tip.setVisible(show_tip)
+        if show_tip:
+            self.activity_tip.setText(ACTIVITY_TIPS[datetime.now().minute % len(ACTIVITY_TIPS)])
 
     def _sync(self, enabled: bool, paused: bool) -> None:
         if not enabled:
@@ -342,7 +375,15 @@ class UsagePage(QWidget):
         session_layout.addWidget(label("当前采样会话", "cardTitle"))
         session_layout.addWidget(self.session_value)
         root.addWidget(session_frame)
-        root.addWidget(card("采样边界", "不会记录键入内容、截图、窗口标题、网页地址、剪贴板或文件内容。活动数据按日保存为类别聚合；具体应用名明细仍默认关闭。", "#C56B5D"))
+        app_frame = QFrame()
+        app_frame.setObjectName("card")
+        app_layout = QVBoxLayout(app_frame)
+        app_layout.setContentsMargins(18, 15, 18, 15)
+        app_layout.addWidget(label("最近 7 天 · 应用明细", "cardTitle"))
+        self.app_usage_value = label("具体应用明细默认关闭。", "appUsageValue")
+        app_layout.addWidget(self.app_usage_value)
+        root.addWidget(app_frame)
+        root.addWidget(card("采样边界", "不会记录键入内容、截图、窗口标题、网页地址、剪贴板或文件内容。类别统计按日聚合；具体应用标识只有在独立授权后才会保存为按日时长。", "#C56B5D"))
         root.addStretch()
         controller.subscribe(self._sync)
         if collector is not None:
@@ -363,6 +404,7 @@ class UsagePage(QWidget):
         return frame, value_label
 
     def _sync(self, enabled: bool, paused: bool) -> None:
+        self._sync_app_usage()
         if not enabled:
             self.active_value.setText("未开启监测\n\n不会把未采集的数据表示为 0 分钟。")
             self.category_value.setText("暂无数据")
@@ -410,8 +452,26 @@ class UsagePage(QWidget):
             self.demo_banner.setText(
                 "演示数据：当前 provider 为 FakeProvider，未读取 Windows 活动。"
                 if self.controller.provider_is_demo
-                else "Windows 受控采样：仅在你开启监测后读取空闲秒数与粗粒度类别，不保存具体应用名。"
+                else "Windows 受控采样：仅在你开启监测后读取空闲秒数与粗粒度类别；应用标识需独立授权。"
             )
+
+    def _sync_app_usage(self) -> None:
+        if self.collector is None:
+            self.app_usage_value.setText("统计服务未连接。")
+            return
+        repository = self.collector.repository
+        if repository.get_consent("app_name_stats") is not True:
+            self.app_usage_value.setText("未开启独立授权；不会保存具体应用标识。")
+            return
+        rows = repository.app_usage_for_period(date.today() - timedelta(days=6), date.today())
+        self.app_usage_value.setText(
+            "\n".join(
+                f"{APP_DISPLAY_NAMES.get(row.app_id, row.app_id)}　约 {row.active_seconds / 60:.1f} 分钟"
+                for row in rows
+            )
+            if rows
+            else "已授权，最近 7 天尚无可显示的应用时长。"
+        )
 
 
 class ReportsPage(QWidget):
@@ -660,9 +720,29 @@ class SettingsPage(QWidget):
         self.monitoring.toggled.connect(self._toggle_monitoring)
         root.addWidget(self.monitoring)
 
-        self.app_names = QCheckBox("允许按具体应用名统计（后续版本）")
-        self.app_names.setEnabled(False)
+        self.app_names = QCheckBox("允许按具体应用统计时长（独立授权，默认关闭）")
+        self.app_names.setChecked(
+            collector.repository.get_consent("app_name_stats") is True
+            if collector is not None else False
+        )
+        self.app_names.setEnabled(collector is not None)
+        self.app_names.setToolTip(
+            "保存规范化应用标识（如 chrome）和按日活跃时长；不保存路径、窗口标题或文档名。关闭时会清除已有应用明细。"
+        )
+        self.app_names.toggled.connect(self._toggle_app_names)
         root.addWidget(self.app_names)
+        root.addWidget(label(
+            "应用明细只有在此开关和电脑活动统计都开启时才记录。关闭此项会立即删除已有应用级统计；类别统计授权不受影响。",
+            "mutedText",
+        ))
+        self.activity_tips = QCheckBox("休息提醒中显示轻柔、可跳过的活动建议")
+        self.activity_tips.setChecked(
+            collector.repository.get_setting("activity_tips_enabled", "true") == "true"
+            if collector is not None else True
+        )
+        self.activity_tips.setEnabled(collector is not None)
+        self.activity_tips.toggled.connect(self._toggle_activity_tips)
+        root.addWidget(self.activity_tips)
         self.health = QCheckBox("开启个人状态打卡：只保存我主动填写的粗粒度舒适度（默认关闭）")
         self.health.setChecked(bodylog_service.enabled if bodylog_service is not None else False)
         self.health.setEnabled(bodylog_service is not None)
@@ -760,7 +840,7 @@ class SettingsPage(QWidget):
         self.clear_all_button.clicked.connect(self._clear_all_data)
         root.addWidget(self.clear_all_button)
         root.addWidget(label("将删除活动聚合、已确认任务、提醒反馈、BodyLog 记录和本地授权状态，并压缩本地数据库；不会删除程序文件。系统备份或磁盘快照中仍可能存在副本。", "mutedText"))
-        root.addWidget(label("M4 已接入独立授权的 BodyLog 和本地事实报告；M6 可选本地 AI 仅访问回环地址，任务清单和报告改写都仍需你的主动操作。", "mutedText"))
+        root.addWidget(label("BodyLog 和本地 AI 均为独立授权；本地模型只访问回环地址，任务清单和报告改写都仍需你的主动操作。", "mutedText"))
         root.addStretch()
         controller.subscribe(self._sync)
         if self.local_ai_service is not None:
@@ -775,6 +855,18 @@ class SettingsPage(QWidget):
         self.config_store.config.activity_monitoring_enabled = enabled
         self.controller.set_enabled(enabled)
         self.monitoring_changed.emit(enabled)
+
+    def _toggle_app_names(self, enabled: bool) -> None:
+        if self.collector is None:
+            return
+        self.config_store.config.app_name_stats_enabled = enabled
+        self.collector.set_app_name_enabled(enabled)
+
+    def _toggle_activity_tips(self, enabled: bool) -> None:
+        if self.collector is not None:
+            self.collector.repository.set_setting(
+                "activity_tips_enabled", "true" if enabled else "false"
+            )
 
     def _toggle_bodylog(self, enabled: bool) -> None:
         self.config_store.config.wellness_checkin_enabled = enabled
@@ -930,6 +1022,8 @@ class SettingsPage(QWidget):
             self.local_ai_service.set_enabled(False)
         if self.personalization_service is not None:
             self.personalization_service.reset_to_default()
+        if self.collector is not None:
+            self.collector.set_app_name_enabled(False)
         self.controller.set_enabled(False)
         if self.local_ai_service is not None:
             self.local_ai_service.reset_configuration()
@@ -940,6 +1034,10 @@ class SettingsPage(QWidget):
         self.config_store.config.wellness_checkin_enabled = False
         self.config_store.config.local_ai_enabled = False
         self.config_store.config.reminder_personalization_enabled = False
+        self.config_store.config.app_name_stats_enabled = False
+        self.app_names.blockSignals(True)
+        self.app_names.setChecked(False)
+        self.app_names.blockSignals(False)
         self.clear_usage_feedback.setText("已清除全部 DeskCare 本地数据和授权状态。")
         self.clear_wellness_feedback.setText("已清除全部 DeskCare 本地数据；授权状态已关闭。")
         self.all_data_cleared.emit()

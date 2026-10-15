@@ -106,6 +106,16 @@ class ActivityCollector:
         self._recent_switch = False
         return changed
 
+    def set_app_name_enabled(self, enabled: bool) -> None:
+        """Persist the separate choice and purge details immediately on revoke."""
+
+        self.repository.set_consent("app_name_stats", enabled)
+        self.controller.set_app_name_enabled(enabled)
+        if not enabled:
+            self.repository.clear_app_usage()
+        self.reset_session()
+        self.notify()
+
     def poll_once(self) -> PollResult:
         try:
             sample = self.controller.read_sample_if_allowed()
@@ -117,6 +127,16 @@ class ActivityCollector:
         if sample is None:
             self.reset_session()
             return self._finish(PollResult(False, reason="consent_or_pause"))
+        if self.repository.get_consent("app_name_stats") is not True and sample.app_id is not None:
+            sample = ActivitySample(
+                monotonic_s=sample.monotonic_s,
+                wall_time=sample.wall_time,
+                idle_s=sample.idle_s,
+                app_category=sample.app_category,
+                state=sample.state,
+                is_foreground_change=sample.is_foreground_change,
+                observation_ok=sample.observation_ok,
+            )
         self._recent_switch = bool(sample.is_foreground_change)
         if not sample.observation_ok:
             self._previous = sample
@@ -153,6 +173,8 @@ class ActivityCollector:
         for bucket, duration in _day_segments(previous.wall_time, sample.wall_time, elapsed):
             bucket_kwargs = {key: value * duration / elapsed for key, value in kwargs.items()}
             self.repository.add_usage(bucket, category, **bucket_kwargs)
+            if previous.app_id and self.repository.get_consent("app_name_stats") is True:
+                self.repository.add_app_usage(bucket, previous.app_id, duration)
         return self._finish(PollResult(True, recorded_seconds=elapsed, reason="recorded"))
 
     def usage_for_day(self, day: date | str | None = None) -> list[UsageRow]:

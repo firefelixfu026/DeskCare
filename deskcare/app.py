@@ -1,4 +1,4 @@
-"""Qt application assembly for the M6 DeskCare shell."""
+"""Qt application assembly for the M7 DeskCare shell."""
 
 import os
 import sys
@@ -23,10 +23,10 @@ from deskcare.ui.main_window import MainWindow
 from deskcare.ui.tray import TrayController
 
 
-def _build_provider(demo_requested: bool):
+def _build_provider(demo_requested: bool, *, include_app_name: bool = False):
     if demo_requested or os.name != "nt":
         return FakeActivityProvider()
-    return WindowsActivityProvider(include_category=True)
+    return WindowsActivityProvider(include_category=True, include_app_name=include_app_name)
 
 
 def create_application(argv: list[str] | None = None):
@@ -37,12 +37,14 @@ def create_application(argv: list[str] | None = None):
     qt_argv = [item for item in raw_argv if item != "--demo"] or ["deskcare"]
     qt_app = QApplication.instance() or QApplication(qt_argv)
     qt_app.setApplicationName("DeskCare")
-    qt_app.setApplicationVersion("2.0.0-m6")
+    qt_app.setApplicationVersion("2.0.0-m7")
     instance_guard = SingleInstanceGuard(parent=qt_app)
     if not instance_guard.primary:
         return qt_app, None, None
     config_store = ConfigStore()
     repository = UsageRepository(get_default_database_path())
+    saved_app_name_consent = repository.get_consent("app_name_stats") is True
+    config_store.config.app_name_stats_enabled = saved_app_name_consent
     saved_consent = repository.get_consent("activity_monitoring")
     initially_enabled = (
         config_store.config.activity_monitoring_enabled
@@ -56,7 +58,7 @@ def create_application(argv: list[str] | None = None):
     saved_local_ai_consent = repository.get_consent("local_ai")
     initially_local_ai_enabled = saved_local_ai_consent is True
     config_store.config.local_ai_enabled = initially_local_ai_enabled
-    provider = _build_provider(demo_requested)
+    provider = _build_provider(demo_requested, include_app_name=saved_app_name_consent)
     controller = MonitoringController(provider, initially_enabled=initially_enabled)
     collector = ActivityCollector(controller, repository)
     task_service = TaskService(repository)

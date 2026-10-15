@@ -1,4 +1,4 @@
-"""Main Qt window and page navigation for DeskCare M6."""
+"""Main Qt window and page navigation for DeskCare M7."""
 
 from PySide6.QtCore import QSize, QThread, Qt
 from PySide6.QtGui import QFont, QFontDatabase
@@ -84,7 +84,7 @@ class MainWindow(QMainWindow):
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation)
         sidebar_layout.addStretch()
-        version = QLabel("M6 · 本地优先 · 可交付运行")
+        version = QLabel("M7 · 本地优先 · 可交付运行")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
@@ -108,6 +108,7 @@ class MainWindow(QMainWindow):
             self.task_service,
             self.reminder_coordinator,
             self.local_ai_service,
+            self.repository,
         )
         self.pages.addWidget(self.today_page)
         self.usage_page = UsagePage(self.monitoring_controller, self.activity_collector)

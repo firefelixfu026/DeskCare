@@ -45,6 +45,13 @@ class MonitoringController:
             self._paused = False
         self._notify()
 
+    def set_app_name_enabled(self, enabled: bool) -> None:
+        """Configure optional app identity sampling independently."""
+
+        configure = getattr(self._provider, "set_app_name_enabled", None)
+        if configure is not None:
+            configure(bool(enabled))
+
     def set_paused(self, paused: bool) -> None:
         self._paused = bool(paused) if self._enabled else False
         self._notify()

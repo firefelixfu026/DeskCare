@@ -68,6 +68,7 @@ class ActivitySample:
     state: ActivityKind
     is_foreground_change: bool
     observation_ok: bool
+    app_id: str | None = None
 
 
 @dataclass(frozen=True)

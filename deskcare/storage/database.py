@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -19,6 +20,13 @@ class UsageRow:
     active_seconds: float
     idle_seconds: float
     unknown_seconds: float
+
+
+@dataclass(frozen=True)
+class AppUsageRow:
+    day: str
+    app_id: str
+    active_seconds: float
 
 
 @dataclass(frozen=True)
@@ -166,6 +174,21 @@ class UsageRepository:
                     VALUES (5, datetime('now'));
                     """
                 )
+            if 6 not in applied:
+                connection.executescript(
+                    """CREATE TABLE IF NOT EXISTS app_usage_daily (
+                        day TEXT NOT NULL,
+                        app_id TEXT NOT NULL,
+                        active_seconds REAL NOT NULL DEFAULT 0 CHECK (active_seconds >= 0),
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (day, app_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_app_usage_daily_day
+                        ON app_usage_daily(day);
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (6, datetime('now'));
+                    """
+                )
 
     @staticmethod
     def _now() -> str:
@@ -292,6 +315,7 @@ class UsageRepository:
         with self._connect() as connection:
             for table in (
                 "usage_daily",
+                "app_usage_daily",
                 "tasks",
                 "reminder_events",
                 "wellness_entries",
@@ -346,10 +370,47 @@ class UsageRepository:
         return [UsageRow(**dict(row)) for row in rows]
 
     def clear_usage(self) -> None:
-        """Delete saved activity aggregates while preserving consent settings."""
+        """Delete category and app aggregates while preserving consent settings."""
 
         with self._connect() as connection:
             connection.execute("DELETE FROM usage_daily")
+            connection.execute("DELETE FROM app_usage_daily")
+
+    def add_app_usage(self, day: date | str, app_id: str, active_seconds: float) -> None:
+        """Persist only a bounded executable stem and its active duration."""
+
+        normalized = str(app_id).casefold().strip()
+        if len(normalized) > 64 or re.fullmatch(r"[\w.-]+", normalized, flags=re.UNICODE) is None:
+            raise ValueError("app_id must be a normalized short identifier")
+        duration = float(active_seconds)
+        if duration < 0:
+            raise ValueError("app usage duration must not be negative")
+        day_text = day.isoformat() if isinstance(day, date) else str(day)
+        with self._connect() as connection:
+            connection.execute(
+                """INSERT INTO app_usage_daily(day, app_id, active_seconds, updated_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(day, app_id) DO UPDATE SET
+                     active_seconds = active_seconds + excluded.active_seconds,
+                     updated_at = excluded.updated_at""",
+                (day_text, normalized, duration, self._now()),
+            )
+
+    def app_usage_for_period(self, start: date, end: date) -> list[AppUsageRow]:
+        if end < start:
+            raise ValueError("end date must not be earlier than start date")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT app_id, SUM(active_seconds) AS active_seconds
+                   FROM app_usage_daily WHERE day BETWEEN ? AND ?
+                   GROUP BY app_id ORDER BY active_seconds DESC, app_id""",
+                (start.isoformat(), end.isoformat()),
+            ).fetchall()
+        return [AppUsageRow(day=f"{start.isoformat()}..{end.isoformat()}", **dict(row)) for row in rows]
+
+    def clear_app_usage(self) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM app_usage_daily")
 
     # --- M2 confirmed task repository ---------------------------------
 

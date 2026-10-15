@@ -1,40 +1,38 @@
-# DeskCare M6｜Windows 发布清单
+# DeskCare M7｜Windows 发布清单
 
-生成日期：2026-10-14（Asia/Shanghai）
+生成日期：2026-10-15（Asia/Shanghai）
 
-## 推荐交付物
+## M7 发布包
 
 | 文件 | 用途 | 大小 | SHA-256 |
 | --- | --- | ---: | --- |
-| `release/DeskCare-2.0.0-M6-windows-x64-portable.zip` | 推荐的 onedir 便携包，完整解压后运行 `DeskCare/DeskCare.exe` | 49,709,681 bytes | `C1B47885D298580A51BF3CB616FC45BBCEF829C598C5D07D7483C8385D9BAED1` |
-| `release/DeskCare-2.0.0-M6-windows-x64-onefile.zip` | 单文件备选包，首次启动较慢 | 47,853,972 bytes | `381BB590361772A1CA802523DF4571EF41C9105EFBFAAB783BD4A3E1E11D0353` |
-| `release/DeskCare-2.0.0-M6-source.zip` | 可审阅源码、测试、脚本、公开资源、示例和文档 | 960,198 bytes | `454A69982448F014AF7F6FDA271A4E3CF7DF60296D5B1D7E39AF1837FD8E54D5` |
+| `release/DeskCare-M7-windows-x64-portable.zip` | 推荐的 onedir 便携包，解压后运行 `DeskCare/DeskCare.exe` | 49,721,027 bytes | `DD6A83E85F929482873B4E5FB2588980AAB9AB279FC9411C1498E5B126C0D550` |
+| `release/DeskCare-M7-windows-x64-onefile.zip` | 单文件备选包，首次启动较慢 | 47,862,503 bytes | `68D204B945D6F533D647ADB6EB86C6E2F45584E0280FAB15CA6B06654F7F4152` |
+| `release/DeskCare-M7-source.zip` | 可审阅源码、测试、脚本、公开资源、示例和文档 | 待生成 | 待生成 |
 
-`release/SHA256SUMS.txt` 保存相同校验值。正式演示优先使用 portable 包，避免 onefile 首次释放 Qt 运行文件带来的等待。
+SHA-256 也保存在 `release/SHA256SUMS.txt`。M7 源码已推送到 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)。源代码 ZIP 有意不包含本发布清单，避免出现自引用校验值。
 
-## 构建与验收证据
+## 构建与验收
 
 - Windows 11，Python 3.12.7，PySide6 6.12.0，PyInstaller 6.22.3。
-- E 盘正式项目执行 `python -m pytest -q`：**65 passed**。
+- E 盘权威项目执行完整测试：**72 passed**。
 - `python -m compileall -q deskcare tests scripts`：通过。
-- `python -m pip check`：`No broken requirements found.`
-- onedir 和 onefile 原始产物均通过 `scripts/verify_windows_package.ps1`。
-- 两个 ZIP 都重新解压到独立临时目录，并从解压内容再次通过同一启动验收：出现 `DeskCare` 主窗口，没有 `Unhandled exception`。
-- 源代码 ZIP 使用明确白名单生成，共 94 个条目；检查确认不含 `.venv`、`build`、`dist`、`release`、`__pycache__`、pytest 临时目录、SQLite 数据库或自引用的发布清单。
-- 验收临时目录均已删除；发布目录不包含测试数据库或用户数据。
+- M7 onedir、onefile 均重新构建，并由 `scripts/verify_windows_package.ps1` 启动验收通过。
+- M7 portable/onefile ZIP 在独立解压目录通过启动验收。
+- 自动化测试覆盖应用明细独立授权、跨日聚合、标识校验、撤回清除、活动数据清除、设置持久化和原有功能回归。
 
-## 运行与隐私边界
+## 隐私与边界
 
-- 首次启动的活动监测、BodyLog、本地 AI、提醒反馈个性化均默认关闭。
-- 不读取窗口标题、网页 URL、键盘内容、截图、剪贴板或未选择文件。
-- 用户数据默认位于 `%LOCALAPPDATA%\DeskCare\deskcare.sqlite3`，不随发布 ZIP 分发。
-- 本地 AI 只允许回环地址，模型输出仍须预览、校验和用户确认；发布包不包含模型，也不会自动下载模型。
-- 应用内清除使用 SQLite `secure_delete` 并尝试 `VACUUM`，但不声称能清除系统备份或磁盘快照。
+- 活动监测和具体应用统计分别授权，首次均关闭；应用统计仅保存规范化 executable stem 与按日活跃时长，不保存进程路径、启动参数、窗口标题或文档名。
+- 用户关闭应用明细授权时立即删除已有应用级记录；活动类别统计授权不会被改变。
+- 不读取键入内容、截图、网页 URL、剪贴板或未选择文件。活动时间是本地估计，不代表工作质量或健康状态。
+- 轻活动提示可关闭、可跳过，不提供医学判断或疗效保证。
+- 默认无遥测、无账号；M7 不增加云端 AI、语音录音或后台麦克风监听。
+- SQLite 清除操作尽力使用 `secure_delete` 和 `VACUUM`，不声称可清除系统备份或磁盘快照。
 
-## 尚未完成的发布条件
+## 尚未完成人工验收
 
-- 当前机器没有已验证的本地模型，不能向评委宣称真实模型质量已经验收。
-- 尚未完成 Windows 10、100%/150%/200% DPI、锁屏/睡眠和多小时运行的完整人工矩阵。
-- 当前二进制未做代码签名，Windows SmartScreen 可能显示未知发布者。
-- 项目目录当前没有 Git 仓库元数据；发布清单以文件哈希和测试记录为版本证据。
-
+- 需要在用户日常 Windows 环境手动检查开启/撤回应用明细授权、近 7 天统计显示，以及提醒建议的可读性和关闭效果。
+- Windows 10、100%/150%/200% DPI、锁屏/睡眠、多屏和多小时运行矩阵尚未全部完成。
+- 当前二进制未签名，Windows SmartScreen 可能显示未知发布者。
+- 当前机器没有已验证的本地模型；M6 本地 AI 接口不能描述为已完成真实模型质量验收。
