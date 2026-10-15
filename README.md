@@ -1,0 +1,149 @@
+# DeskCare
+
+DeskCare 是一个 Windows 本地优先的数字健康习惯辅助与今日任务联动工具。它不是医疗诊断器、生产力评分器或全天候行为监视器。
+
+## 当前版本：M6
+
+M6 在 M5 基础上提供可交付的 PySide6 Qt Widgets 界面与可选本地 AI 任务候选解析：
+
+- “今日”“使用统计”“状态与报告”“设置与隐私”四页导航；
+- 系统托盘打开、暂停监测、退出；没有系统托盘时回退到可见窗口退出；
+- 首次启动活动监测、具体应用名、健康打卡、本地 AI 和提醒反馈个性化均默认关闭；
+- 使用明确标注的演示数据；
+- 使用 `assets/deskcare-app-icon.png` 作为应用/托盘图标，缺失时自动回退到代码绘制图标；
+- Windows 受控采样：仅在用户明确开启后读取空闲秒数和粗粒度应用类别，不读取窗口标题或键盘内容；
+- 使用 `monotonic` 间隔估算活动/空闲/未知时段，超过 60 秒的间隔不计入活动；
+- 显示当前连续活跃会话估计，遇到空闲、未知、暂停、异常或长间隔立即截断；
+- SQLite 增量迁移保存独立同意状态和按日类别聚合，不保存原始样本或具体应用名；
+- 设置页支持经确认后清除已保存的活动聚合，不偷偷改变监测授权；
+- 今日页支持手工添加、编辑、删除和状态修改；
+- 支持用户主动选择 `.txt` / `.md` / `.csv` 文件，先生成可编辑任务草稿预览，再由用户确认入库；
+- 文本导入支持 UTF-8/BOM、Markdown 清单、保守的时间与预计时长提示；CSV 使用严格列校验和 ISO 日期格式；
+- 导入限制文件大小、行长度和任务数量，错误列名、损坏 CSV、空文件、重复标题和模糊时间会在确认前明确显示；
+- SQLite v2 增量迁移保存已确认任务，不保存源文件路径或原文；取消预览不会写入任务库；
+- 用户输入的无时区 ISO 截止时间按本地民用时间保存为带时区值，避免跨模块比较异常；
+- M3 规则提醒结合已确认任务、有限活动和用户情境，使用非阻断卡片与本地反馈冷却；
+- M4 BodyLog 独立授权、粗粒度用户自报、按日覆盖/缺失数据的 FactSheet，以及本地模板日报/周报；
+- 报告可在界面查看并由用户主动导出 Markdown；没有状态授权时明确显示缺失，不提供健康判断；
+- 单实例运行：第二次启动只请求已有窗口显示，不会重复采样或打开第二份数据库连接；
+- 设置页提供带二次确认的全部本地数据清除，包含授权状态、活动、任务、提醒和 BodyLog；
+- `scripts/build_windows.ps1` 提供 Windows PyInstaller onedir 构建入口，`scripts/run_baseline.py` 提供可复现的合成策略对照；
+- pytest 覆盖默认配置、暂停门控、模拟 provider、四页窗口、SQLite 迁移、跨午夜分桶、长间隔、提醒策略、BodyLog 和报告事实。
+- M6 提供可选的本地 Local LLM 任务候选解析和 FactSheet 报告改写：任务只处理用户主动选择的单个任务文件，报告只在用户主动点击后处理当前结构化事实；只允许访问 `localhost` / `127.0.0.1` / `::1`，输出必须经过结构化校验；不可用时自动回到规则/模板。
+- 本地模型候选不会绕过预览和确认，不保存原文或原始模型响应；本地 AI 授权默认关闭，并与活动监测、BodyLog 独立。
+- 本地 AI 的 endpoint 和模型名可在“设置与隐私”中修改并保存到 SQLite；保存只做格式校验，不联网测试；“清除全部本地数据”会一并删除这些配置。
+- 设置页提供用户主动触发的“检测本机模型”：后台只请求回环服务的 `/api/tags`，不发送任务、报告或 BodyLog，并区分服务离线、在线但无模型、配置模型可用/不匹配。
+- 报告页的本地 AI 改写在后台线程执行，模型响应慢或不可用时不会阻塞主窗口，并自动回退到模板报告。
+- 任务预览中的“本地 AI 提议”同样在后台执行；等待时保留规则草稿，取消预览会使迟到模型结果失效，模型响应永远不能绕过人工确认。
+- 退出应用时会等待当前有界本机模型请求结束后再销毁 Qt 工作线程，避免请求进行中退出造成异常终止。
+- Local AI 请求使用禁用代理的回环直连 opener；即使系统开启 Clash/HTTP(S)_PROXY，也不会把本地模型请求转发到代理或外网。
+- 提醒反馈个性化使用独立授权且默认关闭；只使用用户明确点击的提醒反馈，演示数据不参与学习。至少积累 10 条总体反馈、同一情境 5 条反馈后才评估，只有“时机不合适”占比达到 40% 时才把该情境候选窗口延后 5 分钟；不会改变暂停、静默、截止时间、观察缺失或冷却等硬规则，并可一键恢复默认。
+
+接口与边界位于 `deskcare/importers/`、`deskcare/ai/`、`deskcare/services/task_service.py`、`deskcare/sensors/base.py`、`deskcare/services/reminder_service.py`、`deskcare/services/personalization_service.py`、`deskcare/services/bodylog_service.py` 和 `deskcare/services/report_engine.py`；M4 本地模板仍是可靠兜底，M6 的 AI 只辅助任务候选和用户主动触发的 FactSheet 文案改写。
+
+当前仍不做云端 LLM 调用、医学判断、自动任务完成或应用锁。M1 的 Windows provider 只在 Windows 环境实例化；非 Windows 环境使用明确标记的 FakeProvider。M6 不内置或下载模型；如果没有本机 Ollama-compatible 服务，界面仍使用规则导入。
+
+## 运行
+
+建议使用 Python 3.11 或 3.12：
+
+```powershell
+python -m pip install -e ".[dev]"
+python -m deskcare
+```
+
+比赛演示或离线回归时，可以显式使用模拟 provider；模拟数据会在界面中标注，且仍需手动开启活动统计：
+
+```powershell
+python -m deskcare --demo
+```
+
+如果 Windows 上的 pip 因代理或 PyPI SSL 问题无法下载 `setuptools` 构建依赖，可以绕过 editable 构建，直接安装运行/测试依赖；在项目根目录运行时不需要先安装 DeskCare 包：
+
+```powershell
+$proxy = "http://127.0.0.1:7897"
+$env:HTTP_PROXY = $proxy
+$env:HTTPS_PROXY = $proxy
+python -m pip install --proxy $proxy -r requirements-dev.txt
+python -m deskcare
+python -m pytest -q
+```
+
+如果你的 Clash Verge 使用的混合端口不是 `7897`，请把命令中的端口替换为 Clash Verge“端口设置”中的实际值。
+
+### Windows 构建与卸载
+
+开发/测试依赖（包含 PyInstaller）：
+
+```powershell
+python -m pip install -r requirements-dev.txt
+```
+
+在项目根目录构建不需要安装器的 onedir 包：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
+```
+
+构建后自动启动隔离的演示实例并检查主窗口、Qt DLL 和异常弹窗：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -Verify
+```
+
+产物为 `dist\DeskCare\DeskCare.exe`。将整个 `dist\DeskCare` 文件夹复制到目标电脑即可运行；不要只复制 exe，因为 Qt 和资源文件位于同一目录。卸载时先退出托盘中的 DeskCare，再删除整个 `dist\DeskCare` 文件夹和用户数据目录 `%LOCALAPPDATA%\DeskCare`（删除前请确认不再需要本地任务/报告）。应用内“清除全部数据”会使用 SQLite `secure_delete` 并尝试压缩数据库，但这不是法证级擦除，系统备份或磁盘快照仍可能保留副本。应用没有后台服务、自动启动或云端账户。
+
+构建脚本会临时隔离 PATH，只使用指定虚拟环境的 Python 和系统目录。这样可以避免电脑同时安装 Python 3.12/3.14 或多个 Qt 发行版时，PyInstaller 收集到错误的 `python3.dll`/Qt 依赖。
+
+如果必须交付单个文件，可以使用实验性的 onefile 变体：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -OneFile
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -OneFile -Verify
+```
+
+它会生成 `dist\DeskCare.exe`。看到“QtCore.dll 找不到指定的程序”时，先用项目脚本重新构建，不要混用不同构建目录的 exe 与 `_internal`；onedir 仍必须复制整个 `dist\DeskCare` 文件夹，onefile 才可以单独复制。
+
+也可以单独验证已有产物。验证脚本会拒绝已有同路径进程，使用临时 `LOCALAPPDATA`，并在结束时只停止本次启动的进程：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\verify_windows_package.ps1 -Executable .\dist\DeskCare\DeskCare.exe
+powershell -ExecutionPolicy Bypass -File .\scripts\verify_windows_package.ps1 -Executable .\dist\DeskCare.exe
+```
+
+### 已验证发布 ZIP
+
+`release\DeskCare-2.0.0-M6-windows-x64-portable.zip` 是推荐交付物；完整解压后运行 `DeskCare\DeskCare.exe`。`release\DeskCare-2.0.0-M6-windows-x64-onefile.zip` 是单文件备选。两个运行包均已在独立临时目录重新解压并通过启动验收。`release\DeskCare-2.0.0-M6-source.zip` 只包含可审阅源码、测试、公开资源、示例和文档，不含虚拟环境、构建缓存或用户数据库。版本、大小、SHA-256、已测环境和限制见 `RELEASE_MANIFEST.md`，校验值也保存在 `release\SHA256SUMS.txt`。
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-2.0.0-M6-windows-x64-portable.zip
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-2.0.0-M6-windows-x64-onefile.zip
+```
+
+### 可复现策略对照
+
+```powershell
+python .\scripts\run_baseline.py
+```
+
+输出只使用虚构情境，比较固定 40 分钟提醒与 DeskCare 情境策略的动作和 reason code，不宣称健康或效率优越性。
+
+测试：
+
+```powershell
+pytest -q
+```
+
+关闭主窗口时，若系统托盘可用，应用会隐藏到托盘；右键托盘可以重新打开、暂停/恢复监测或退出。首次启动不读取 Windows 活动，也不访问用户文件或网络。
+
+## 隐私边界
+
+监测只有在用户明确开启后才允许 provider 读取样本；暂停后立即停止读取。非 Windows 环境使用合成模拟 provider，所有演示数字和任务均明确标注为演示数据。
+
+完整产品、技术和隐私约束见 `README_先看我.md` 与 `docs/`。M4 的 BodyLog 与活动监测、任务管理均为独立授权；M5 增加单实例、可清除数据和 Windows 构建；M6 增加可选本地 AI 任务候选链路，但真实模型是否可用仍以本机人工验证为准。
+
+当前 M1 演示流程见 `docs/M1_演示脚本.md`，M2 演示流程见 `docs/M2_演示脚本.md`，M2 验收记录见 `docs/M2_验收记录.md`，Windows 人工验收清单见 `docs/M2_Windows人工验收清单.md`。
+M3 演示流程见 `docs/M3_演示脚本.md`，M4 演示流程见 `docs/M4_演示脚本.md`，M4 验收记录见 `docs/M4_验收记录.md`。
+M5 验收记录见 `docs/M5_验收记录.md`，M5 演示流程见 `docs/M5_演示脚本.md`，Windows 清单见 `docs/M5_Windows人工验收清单.md`。
+M6 验收记录见 `docs/M6_验收记录.md`，M6 演示流程见 `docs/M6_演示脚本.md`，Windows 清单见 `docs/M6_Windows人工验收清单.md`。
+

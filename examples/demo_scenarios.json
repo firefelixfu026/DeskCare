@@ -1,0 +1,51 @@
+{
+  "is_demo_data": true,
+  "scenarios": [
+    {
+      "name": "no_consent",
+      "monitoring_enabled": false,
+      "mode": "normal",
+      "active_minutes": 50,
+      "last_input_idle_seconds": 1,
+      "recent_switch": true,
+      "expected_reason_code": "CONSENT_OR_PAUSE"
+    },
+    {
+      "name": "meeting_mode",
+      "monitoring_enabled": true,
+      "mode": "meeting",
+      "active_minutes": 50,
+      "last_input_idle_seconds": 1,
+      "recent_switch": true,
+      "expected_reason_code": "USER_QUIET_MODE"
+    },
+    {
+      "name": "natural_gap",
+      "monitoring_enabled": true,
+      "mode": "normal",
+      "active_minutes": 45,
+      "last_input_idle_seconds": 1,
+      "recent_switch": true,
+      "expected_reason_code": "POSSIBLE_NATURAL_GAP"
+    },
+    {
+      "name": "deadline_imminent",
+      "monitoring_enabled": true,
+      "mode": "normal",
+      "active_minutes": 45,
+      "last_input_idle_seconds": 1,
+      "recent_switch": true,
+      "confirmed_deadline_minutes_away": 5,
+      "expected_reason_code": "SCHEDULE_OR_FOCUS_CONSTRAINT"
+    },
+    {
+      "name": "idle_not_break",
+      "monitoring_enabled": true,
+      "mode": "normal",
+      "active_minutes": 45,
+      "last_input_idle_seconds": 600,
+      "recent_switch": false,
+      "expected_reason_code": "INPUT_IDLE_NOT_PROVEN_BREAK"
+    }
+  ]
+}

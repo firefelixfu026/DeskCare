@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deskcare"
+version = "2.0.0"
+description = "DeskCare 2.0 local-first Windows desktop wellbeing assistant"
+requires-python = ">=3.11,<3.13"
+dependencies = ["PySide6>=6.6,<7"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+build = ["pyinstaller>=6,<7"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
