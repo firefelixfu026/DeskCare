@@ -1,8 +1,25 @@
-# DeskCare M7｜Windows 发布清单
+# DeskCare M8｜Windows 发布清单
 
 生成日期：2026-10-15（Asia/Shanghai）
 
-## M7 发布包
+## M8 发布包
+
+| 文件 | 用途 | 大小 | SHA-256 |
+| --- | --- | ---: | --- |
+| `release/DeskCare-M8-windows-x64-portable.zip` | 推荐的 onedir 便携包，解压后运行 `DeskCare/DeskCare.exe` | 78,117,824 bytes | `8D324267BF2F07C7F6DAEF763D85DF814BDE53AFE28F51847FC656C20B68B6F7` |
+| `release/DeskCare-M8-windows-x64-onefile.zip` | 单文件备选包，首次自解压较慢 | 75,386,548 bytes | `600B1459F3A14C7F1FA0C582025FD92EF64C81FEB1C2850EE40FF011E66511B9` |
+| `release/DeskCare-M8-source.zip` | 可审阅源码、测试、脚本、公开资源和文档 | 976,806 bytes | `39CF43A0F17CBD11793C707A3A2C079F1EB6BE93FCB0385B225B1B73932D7D2D` |
+
+M8 源码提交为 `6817ba1`；M8 三个发布包的 SHA-256 记录在 `release/SHA256SUMS.txt`。源代码 ZIP 由提交 `6817ba1` 生成，不包含虚拟环境、构建缓存、用户数据或自引用发布清单。
+
+## M8 构建与验收
+
+- Windows 11，Python 3.12.7，PySide6 6.12.0，PyInstaller 6.22.3，Vosk 0.3.45 runtime。
+- 完整回归：**78 passed**；compileall 和 pip check 通过。
+- onedir、onefile 均重建并启动验收通过；两个 M8 ZIP 在新目录解压后分别再次启动验收通过。
+- 发行包包含 Vosk runtime 但不包含语音模型。真实麦克风权限、中文识别质量、多屏/DPI 仍待人工验收。
+
+## M7 发布包（历史）
 
 | 文件 | 用途 | 大小 | SHA-256 |
 | --- | --- | ---: | --- |
