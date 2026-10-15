@@ -8,7 +8,7 @@
 | --- | --- | ---: | --- |
 | `release/DeskCare-M7-windows-x64-portable.zip` | 推荐的 onedir 便携包，解压后运行 `DeskCare/DeskCare.exe` | 49,726,653 bytes | `3532BB57AE4236AF26CB5C8A96E2D5540344C87F8A4F942A7625B180A755B9DE` |
 | `release/DeskCare-M7-windows-x64-onefile.zip` | 单文件备选包，首次启动较慢 | 47,862,547 bytes | `779B703DAA8DA81D725DBD3600D1B45E25A78734D1AF882A2C820489281433AC` |
-| `release/DeskCare-M7-source.zip` | 可审阅源码、测试、脚本、公开资源、示例和文档 | 962,969 bytes | `0FAEC3BAC06CC669083918DF5B298B93703C370D0D2BB9BDD5C8AAF7408548AC` |
+| `release/DeskCare-M7-source.zip` | 可审阅源码、测试、脚本、公开资源、示例和文档 | 963,032 bytes | `C6A657C8DD85874DB23DED4125993AC1E7D8C54F39919F360B60EE14937538CB` |
 
 SHA-256 也保存在 `release/SHA256SUMS.txt`。M7 源码已推送到 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)，M7 源码提交为 `aed842a`。源代码 ZIP 有意不包含本发布清单，避免出现自引用校验值。
 
