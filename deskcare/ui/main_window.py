@@ -1,4 +1,4 @@
-"""Main Qt window and page navigation for DeskCare M7."""
+"""Main Qt window and page navigation for DeskCare M8."""
 
 from PySide6.QtCore import QSize, QThread, Qt
 from PySide6.QtGui import QFont, QFontDatabase
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from deskcare.ui.pages import ReportsPage, SettingsPage, TodayPage, UsagePage
+from deskcare.ui.companion import CompanionWindow
 from deskcare.ui.tray import build_tray_icon
 
 
@@ -84,7 +85,7 @@ class MainWindow(QMainWindow):
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation)
         sidebar_layout.addStretch()
-        version = QLabel("M7 · 本地优先 · 可交付运行")
+        version = QLabel("M8 · 本地优先 · 可交付运行")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
@@ -128,7 +129,9 @@ class MainWindow(QMainWindow):
             self.bodylog_service,
             self.local_ai_service,
             self.personalization_service,
+            self.repository,
         )
+        self.settings_page.companion_visibility_changed.connect(self.set_companion_visible)
         self.settings_page.all_data_cleared.connect(self._refresh_after_data_clear)
         self.pages.addWidget(self.settings_page)
         content_layout.addWidget(self.pages)
@@ -136,6 +139,27 @@ class MainWindow(QMainWindow):
         shell_layout.addWidget(sidebar)
         shell_layout.addWidget(content, 1)
         self.setCentralWidget(shell)
+        self.companion = CompanionWindow(
+            self.task_service, self.reminder_coordinator, self.repository
+        )
+        self.companion.hide_requested.connect(
+            lambda: self.settings_page.companion_enabled.setChecked(False)
+        )
+        self.companion.open_main_requested.connect(self._show_main_window)
+        if self.repository is not None and self.repository.get_setting("companion_enabled", "false") == "true":
+            self.companion.show()
+
+    def set_companion_visible(self, visible: bool) -> None:
+        if visible:
+            self.companion.show()
+            self.companion.raise_()
+        else:
+            self.companion.hide()
+
+    def _show_main_window(self) -> None:
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     def _switch_page(self, index: int) -> None:
         self.pages.setCurrentIndex(index)
@@ -158,6 +182,8 @@ class MainWindow(QMainWindow):
             self.reminder_coordinator.reset_after_data_clear()
         self.today_page.refresh_tasks()
         self.reports_page.refresh_report()
+        self.companion.hide()
+        self.settings_page.companion_enabled.setChecked(False)
 
     def _apply_style(self) -> None:
         for family in ("Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "SimSun", "Segoe UI"):
@@ -209,6 +235,9 @@ class MainWindow(QMainWindow):
             return
         self._shutting_down = True
         try:
+            companion = getattr(self, "companion", None)
+            if companion is not None:
+                companion.stop_voice_input()
             threads = [thread for thread in self.findChildren(QThread) if thread.isRunning()]
             # quit() is thread-safe and lets each event loop stop as soon as
             # its current bounded local request returns. Calling it before

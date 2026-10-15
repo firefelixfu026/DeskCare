@@ -42,11 +42,19 @@ class TrayController:
         menu = QMenu()
         show_action = QAction("打开 DeskCare", menu)
         show_action.triggered.connect(self.show_window)
+        self.companion_action = QAction("显示桌面伙伴", menu)
+        self.companion_action.setCheckable(True)
+        self.companion_action.setChecked(self.window.companion.isVisible())
+        self.companion_action.triggered.connect(self._toggle_companion)
+        self.window.settings_page.companion_visibility_changed.connect(
+            self.companion_action.setChecked
+        )
         self.pause_action = QAction("暂停监测", menu)
         self.pause_action.triggered.connect(self.toggle_pause)
         quit_action = QAction("退出", menu)
         quit_action.triggered.connect(self.quit)
         menu.addAction(show_action)
+        menu.addAction(self.companion_action)
         menu.addAction(self.pause_action)
         menu.addSeparator()
         menu.addAction(quit_action)
@@ -72,6 +80,9 @@ class TrayController:
 
     def toggle_pause(self) -> None:
         self.monitoring_controller.toggle_paused()
+
+    def _toggle_companion(self, visible: bool) -> None:
+        self.window.settings_page.companion_enabled.setChecked(visible)
 
     def quit(self) -> None:
         self.window.request_quit()

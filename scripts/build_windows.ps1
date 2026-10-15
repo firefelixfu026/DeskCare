@@ -2,7 +2,8 @@ param(
     [string]$Python = ".\.venv\Scripts\python.exe",
     [string]$OutputName = "DeskCare",
     [switch]$OneFile,
-    [switch]$Verify
+    [switch]$Verify,
+    [int]$StartupSeconds = 20
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,6 +41,16 @@ $args = @(
     "--specpath", "build",
     $entryPath
 )
+$voiceRuntime = & $Python -c "import importlib.util; print('yes' if importlib.util.find_spec('vosk') else 'no')"
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not check optional local voice runtime"
+}
+if ($voiceRuntime.Trim() -eq "yes") {
+    $args += @("--collect-all", "vosk")
+    Write-Host "Including optional Vosk runtime; no speech model is bundled."
+} else {
+    Write-Warning "Vosk is not installed in this Python environment. This package will retain manual task entry, but offline voice input will require rebuilding after installing .[voice]."
+}
 & $Python @args
 if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller build failed with exit code $LASTEXITCODE"
@@ -54,5 +65,5 @@ if ($OneFile) {
 if ($Verify) {
     $verificationScript = (Resolve-Path -LiteralPath ".\scripts\verify_windows_package.ps1").Path
     $verificationRoot = Join-Path (Resolve-Path -LiteralPath ".\build").Path "package-smoke"
-    & $verificationScript -Executable $builtExecutable -TemporaryRoot $verificationRoot
+    & $verificationScript -Executable $builtExecutable -StartupSeconds $StartupSeconds -TemporaryRoot $verificationRoot
 }

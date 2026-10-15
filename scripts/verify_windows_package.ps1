@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Executable,
-    [int]$StartupSeconds = 6,
+    [int]$StartupSeconds = 20,
     [string]$TemporaryRoot = ([IO.Path]::GetTempPath())
 )
 

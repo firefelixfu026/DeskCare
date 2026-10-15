@@ -687,8 +687,9 @@ class ReportsPage(QWidget):
 class SettingsPage(QWidget):
     monitoring_changed = Signal(bool)
     all_data_cleared = Signal()
+    companion_visibility_changed = Signal(bool)
 
-    def __init__(self, config_store, controller, collector=None, bodylog_service=None, local_ai_service=None, personalization_service=None, parent=None) -> None:
+    def __init__(self, config_store, controller, collector=None, bodylog_service=None, local_ai_service=None, personalization_service=None, repository=None, parent=None) -> None:
         super().__init__(parent)
         self.config_store = config_store
         self.controller = controller
@@ -696,6 +697,7 @@ class SettingsPage(QWidget):
         self.bodylog_service: BodyLogService | None = bodylog_service
         self.local_ai_service = local_ai_service
         self.personalization_service = personalization_service
+        self.repository = repository or (collector.repository if collector is not None else None)
         self._local_ai_probe_thread: QThread | None = None
         self._local_ai_probe_worker: _LocalModelProbeWorker | None = None
         self._local_ai_probe_generation = 0
@@ -714,6 +716,15 @@ class SettingsPage(QWidget):
         root.setSpacing(14)
         root.addWidget(label("所有敏感能力分开授权，随时可以暂停或清除。", "pageLead"))
         root.addWidget(card("隐私原则", "DeskCare 默认离线运行。M1 只有在你明确开启后才读取有限活动信号；M2 只在你主动选择文件后读取其内容，并且只保存确认后的结构化任务；M3 提醒只使用有限活动聚合、已确认任务和你选择的情境。不读取键盘内容、窗口标题、网页地址或剪贴板。", "#2F6B5F"))
+
+        self.companion_enabled = QCheckBox("显示桌面伙伴（默认关闭；可随时隐藏）")
+        self.companion_enabled.setChecked(
+            self.repository.get_setting("companion_enabled", "false") == "true"
+            if self.repository is not None else False
+        )
+        self.companion_enabled.toggled.connect(self._toggle_companion)
+        root.addWidget(self.companion_enabled)
+        root.addWidget(label("伙伴只显示你已确认的今日任务和手动情境；本地语音需另行配置 Vosk 模型，仅在按住录音时访问麦克风，不保留音频文件。", "mutedText"))
 
         self.monitoring = QCheckBox("开启电脑活动统计：空闲秒数与粗粒度类别（默认关闭）")
         self.monitoring.setChecked(controller.enabled)
@@ -850,6 +861,11 @@ class SettingsPage(QWidget):
         self._sync(controller.enabled, controller.paused)
         self.settings_scroll.setWidget(settings_content)
         page_layout.addWidget(self.settings_scroll)
+
+    def _toggle_companion(self, enabled: bool) -> None:
+        if self.repository is not None:
+            self.repository.set_setting("companion_enabled", "true" if enabled else "false")
+        self.companion_visibility_changed.emit(enabled)
 
     def _toggle_monitoring(self, enabled: bool) -> None:
         self.config_store.config.activity_monitoring_enabled = enabled
