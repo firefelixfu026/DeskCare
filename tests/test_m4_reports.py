@@ -107,6 +107,7 @@ def test_authorized_app_details_appear_in_report_with_friendly_name(tmp_path):
     reason="PySide6 is required for the report UI integration test",
 )
 def test_ai_summary_does_not_replace_the_factual_report(tmp_path):
+    from PySide6.QtCore import QCoreApplication, QEvent
     from PySide6.QtWidgets import QApplication
 
     from deskcare.services.report_engine import LocalReportService
@@ -145,5 +146,7 @@ def test_ai_summary_does_not_replace_the_factual_report(tmp_path):
     assert "整理后的摘要" in displayed
     assert "---" in displayed
     assert factual_report in displayed
-    page.close()
+    page.hide()
+    page.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     app.processEvents()

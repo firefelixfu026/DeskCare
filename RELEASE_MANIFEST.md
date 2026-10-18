@@ -1,6 +1,20 @@
 # DeskCare Windows 发布清单
 
-生成日期：2026-10-15（Asia/Shanghai）
+生成日期：2026-10-18（Asia/Shanghai）
+
+## M13 Final 当前推荐版本（含 M12 桌宠与 XLSX）
+
+| 文件 | 用途 | 大小 | SHA-256 |
+| --- | --- | ---: | --- |
+| `release/DeskCare-M13-final-windows-x64-portable.zip` | 推荐的 onedir 便携包，解压后运行 `DeskCare.exe` | 78,248,578 bytes | `CC0CC5A3848A1D2C0ED464396AE8EB60198EEF2E7E46D2B6904BF1A709303966` |
+| `release/DeskCare-M13-final-windows-x64-onefile.zip` | 单文件备选包，首次启动需自解压 | 75,520,143 bytes | `DE8FAA97B07FFF9DB65701862B049D37AA494C0C94DFA7028EE325B5730865F8` |
+
+## M13 构建与验收
+
+- Windows 11，Python 3.12.7，PySide6 6.12.0，PyInstaller 6.22.3；包内包含 Vosk 0.3.45 运行库，不含语音模型。
+- 完整自动化回归：**101 passed, 1 skipped**；`compileall`、`pip check` 通过。跳过项是当前沙箱禁用 socket 的本机模型检测测试。
+- onedir/onefile 均由 `scripts/build_windows.ps1 -Verify` / `-OneFile -Verify` 重新构建并启动验收；M13-final ZIP 在独立目录解压后也分别启动验收通过。
+- 不提供签名安装器；未使用真实麦克风、Vosk 模型、云端 API Key 或真实服务商；这些依赖用户设备/选择，见 M8/M9/M13 人工验收文档。
 
 ## M9 发布包
 

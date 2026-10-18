@@ -5,7 +5,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal, Slot
+from PySide6.QtCore import QEvent, QObject, QRect, QThread, QTimer, Qt, Signal, Slot
+from PySide6.QtGui import QColor, QCursor, QPainter, QPainterPath, QPen
 from PySide6.QtMultimedia import QAudioSource, QMediaDevices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -24,6 +25,67 @@ from PySide6.QtWidgets import (
 from deskcare.domain.types import TaskStatus
 from deskcare.voice.audio import to_vosk_pcm16
 from deskcare.voice.vosk_adapter import transcribe_pcm
+
+
+class SproutMascot(QWidget):
+    """A small code-drawn DeskCare sprout; no external image asset is required."""
+
+    clicked = Signal()
+
+    def __init__(self, *, interactive: bool = False, parent=None):
+        super().__init__(parent)
+        self.interactive = interactive
+        self.setFixedSize(38, 38)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        if interactive:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip("点我展开 DeskCare")
+            self.setAccessibleName("展开 DeskCare 桌面伙伴")
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        scale = min(self.width(), self.height()) / 64.0
+        painter.translate((self.width() - 64 * scale) / 2, (self.height() - 64 * scale) / 2)
+        painter.scale(scale, scale)
+
+        body = QPainterPath()
+        body.moveTo(32, 19)
+        body.cubicTo(17, 19, 10, 30, 11, 42)
+        body.cubicTo(12, 55, 22, 60, 32, 60)
+        body.cubicTo(43, 60, 53, 54, 53, 41)
+        body.cubicTo(53, 29, 46, 19, 32, 19)
+        body.closeSubpath()
+        painter.setPen(QPen(QColor("#367A6C"), 2.2))
+        painter.setBrush(QColor("#C9EBDD"))
+        painter.drawPath(body)
+
+        painter.save()
+        painter.translate(31, 17)
+        painter.rotate(-22)
+        painter.setPen(QPen(QColor("#367A6C"), 1.8))
+        painter.setBrush(QColor("#7CBF8D"))
+        painter.drawEllipse(0, -13, 18, 10)
+        painter.restore()
+        painter.setPen(QPen(QColor("#367A6C"), 1.8))
+        painter.drawLine(31, 18, 35, 9)
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#315B51"))
+        painter.drawEllipse(23, 37, 3.5, 4.5)
+        painter.drawEllipse(38, 37, 3.5, 4.5)
+        painter.setBrush(QColor("#E9A7A0"))
+        painter.drawEllipse(16, 42, 6, 3.5)
+        painter.drawEllipse(42, 42, 6, 3.5)
+        painter.setPen(QPen(QColor("#567C6F"), 1.7))
+        painter.drawArc(QRect(27, 40, 10, 8), 205 * 16, 130 * 16)
+
+    def mouseReleaseEvent(self, event):
+        if self.interactive and event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 class _TranscribeWorker(QObject):
@@ -58,6 +120,8 @@ class CompanionWindow(QWidget):
         self.reminder_coordinator = reminder_coordinator
         self.repository = repository
         self._drag_offset = None
+        self._peek_side: str | None = None
+        self._expanded_size = None
         self._audio_source = None
         self._audio_device = None
         self._audio_format = None
@@ -74,10 +138,18 @@ class CompanionWindow(QWidget):
             "QComboBox QAbstractItemView{color:#24312E;background:#FFFFFF;selection-color:#214F45;selection-background-color:#D4E4D9;outline:0;}"
             "QComboBox QAbstractItemView::item{color:#24312E;padding:8px 10px;min-height:24px;}"
         )
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.content = QWidget(self)
+        root = QVBoxLayout(self.content)
         root.setContentsMargins(14, 12, 14, 14)
         title_row = QHBoxLayout()
+        title_row.addWidget(SproutMascot(parent=self))
         title = QLabel("DeskCare · 今日伙伴")
+        title.setObjectName("companionDragHandle")
+        title.setCursor(Qt.CursorShape.SizeAllCursor)
+        title.setToolTip("拖动这里移动；靠近屏幕左右边缘松开可收成半露状态")
+        title.installEventFilter(self)
         title.setStyleSheet("font-size:15px;font-weight:700")
         title_row.addWidget(title)
         title_row.addStretch()
@@ -131,6 +203,12 @@ class CompanionWindow(QWidget):
         confirm = QPushButton("确认并添加")
         confirm.clicked.connect(self._confirm_transcript)
         root.addWidget(confirm)
+        outer.addWidget(self.content)
+        self.peek_button = SproutMascot(interactive=True, parent=self)
+        self.peek_button.setFixedSize(90, 110)
+        self.peek_button.clicked.connect(self._expand_from_edge)
+        self.peek_button.hide()
+        outer.addWidget(self.peek_button)
         if self.task_service is not None:
             self.task_service.subscribe(self.refresh_tasks)
         self.refresh_tasks()
@@ -145,17 +223,87 @@ class CompanionWindow(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._begin_drag(event.globalPosition().toPoint())
             event.accept()
 
     def mouseMoveEvent(self, event):
         if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            self._move_drag(event.globalPosition().toPoint())
             event.accept()
 
     def mouseReleaseEvent(self, event):
-        self._drag_offset = None
+        self._finish_drag()
         super().mouseReleaseEvent(event)
+
+    def eventFilter(self, watched, event):
+        if watched.objectName() == "companionDragHandle":
+            if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                self._begin_drag(event.globalPosition().toPoint())
+                return True
+            if event.type() == QEvent.Type.MouseMove and self._drag_offset is not None:
+                if event.buttons() & Qt.MouseButton.LeftButton:
+                    self._move_drag(event.globalPosition().toPoint())
+                return True
+            if event.type() == QEvent.Type.MouseButtonRelease and self._drag_offset is not None:
+                self._finish_drag()
+                return True
+        return super().eventFilter(watched, event)
+
+    def _begin_drag(self, global_position) -> None:
+        self._drag_offset = global_position - self.frameGeometry().topLeft()
+
+    def _move_drag(self, global_position) -> None:
+        if self._drag_offset is not None:
+            self.move(global_position - self._drag_offset)
+
+    def _finish_drag(self) -> None:
+        self._drag_offset = None
+        if self._peek_side is None:
+            self._snap_if_near_edge()
+
+    def _snap_if_near_edge(self) -> None:
+        screen = QApplication.screenAt(self.frameGeometry().center()) or QApplication.primaryScreen()
+        if screen is None:
+            return
+        area = screen.availableGeometry()
+        frame = self.frameGeometry()
+        if frame.left() <= area.left() + 34:
+            self._dock_to_edge("left", area)
+        elif frame.right() >= area.right() - 34:
+            self._dock_to_edge("right", area)
+
+    def _dock_to_edge(self, side: str, area: QRect) -> None:
+        if side not in {"left", "right"} or self._peek_side is not None:
+            return
+        self._expanded_size = self.size()
+        y = min(max(self.y(), area.top()), area.bottom() - 109)
+        self.content.hide()
+        self.peek_button.show()
+        self._peek_side = side
+        self.setFixedSize(90, 110)
+        x = area.left() - 45 if side == "left" else area.right() - 45
+        self.move(x, y)
+
+    def _expand_from_edge(self) -> None:
+        if self._peek_side is None:
+            return
+        side = self._peek_side
+        old_y = self.y()
+        self._peek_side = None
+        self.peek_button.hide()
+        self.content.show()
+        self.setMinimumSize(0, 0)
+        self.setMaximumSize(16777215, 16777215)
+        self.resize(self._expanded_size or self.size())
+        self.setFixedWidth(300)
+        self.adjustSize()
+        screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
+        if screen is not None:
+            area = screen.availableGeometry()
+            x = area.left() if side == "left" else area.right() - self.width() + 1
+            y = min(max(old_y, area.top()), area.bottom() - self.height() + 1)
+            self.move(x, y)
+        self._expanded_size = None
 
     def _set_mode(self, _index):
         if self.reminder_coordinator is not None:

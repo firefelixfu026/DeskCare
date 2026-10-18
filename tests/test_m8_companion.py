@@ -133,6 +133,46 @@ def test_companion_mode_selection_is_explicit_and_does_not_touch_monitoring(tmp_
     companion.close()
 
 
+def test_companion_docks_as_half_peeking_mascot_and_restores_on_click(tmp_path):
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    from deskcare.ui.companion import CompanionWindow
+
+    _app()
+    companion = CompanionWindow()
+    companion.show()
+    area = QApplication.primaryScreen().availableGeometry()
+    drag_handle = companion.findChild(QLabel, "companionDragHandle")
+    assert drag_handle is not None
+    assert drag_handle.cursor().shape() == Qt.CursorShape.SizeAllCursor
+    companion._begin_drag(QPoint(companion.x() + 20, companion.y() + 20))
+    companion._move_drag(QPoint(area.left() + 25, area.top() + 70))
+    companion._finish_drag()
+
+    assert companion._peek_side == "left"
+    assert companion.content.isHidden()
+    assert companion.peek_button.isVisible()
+    assert companion.width() == 90
+    assert companion.x() == area.left() - 45
+
+    QTest.mouseClick(companion.peek_button, Qt.MouseButton.LeftButton)
+
+    assert companion._peek_side is None
+    assert companion.content.isVisible()
+    assert companion.width() == 300
+    assert companion.x() == area.left()
+
+    companion._begin_drag(QPoint(companion.x() + 20, companion.y() + 20))
+    companion._move_drag(QPoint(area.right() - companion.width() + 25, area.top() + 70))
+    companion._finish_drag()
+    assert companion._peek_side == "right"
+    assert companion.x() == area.right() - 45
+    companion.hide()
+    companion.close()
+
+
 def test_companion_says_why_voice_input_is_not_ready_and_manual_add_still_works(tmp_path, monkeypatch):
     import deskcare.ui.companion as companion_module
     from deskcare.services.task_service import TaskService

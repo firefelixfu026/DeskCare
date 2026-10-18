@@ -40,7 +40,7 @@ def validate_selected_path(path: str | Path, allowed_suffixes: set[str]) -> tupl
 
     candidate = Path(path)
     if candidate.suffix.lower() not in allowed_suffixes:
-        return None, (ImportIssue("unsupported_type", "请选择 .txt、.md 或 .csv 文件。"),)
+        return None, (ImportIssue("unsupported_type", "请选择 .txt、.md、.csv 或 .xlsx 文件。"),)
     try:
         if not candidate.is_file():
             return None, (ImportIssue("not_a_file", "所选路径不是可读取的文件。"),)

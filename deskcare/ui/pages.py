@@ -248,17 +248,18 @@ class TodayPage(QWidget):
             self,
             "选择今日任务清单",
             "",
-            "任务清单 (*.txt *.md *.csv);;文本文件 (*.txt *.md);;CSV 文件 (*.csv)",
+            "任务清单 (*.txt *.md *.csv *.xlsx);;文本文件 (*.txt *.md);;表格文件 (*.csv *.xlsx)",
         )
         if not path:
             return
         result = parse_selected_file(path)
+        selected_suffix = Path(path).suffix.casefold()
         ai_parser = None
-        if self.local_ai_service is not None and self.local_ai_service.enabled:
+        if selected_suffix != ".xlsx" and self.local_ai_service is not None and self.local_ai_service.enabled:
             ai_parser = lambda selected_path=path: self.local_ai_service.parse_path(selected_path)
         cloud_request_factory = None
         cloud_parser = None
-        if self.cloud_ai_service is not None and self.cloud_ai_service.enabled:
+        if selected_suffix != ".xlsx" and self.cloud_ai_service is not None and self.cloud_ai_service.enabled:
             cloud_request_factory = lambda selected_path=path: self.cloud_ai_service.prepare(
                 Path(selected_path).read_bytes(), Path(selected_path).name
             )
@@ -266,6 +267,10 @@ class TodayPage(QWidget):
         dialog = ImportPreviewDialog(result, self, ai_parser=ai_parser,
                                      cloud_request_factory=cloud_request_factory,
                                      cloud_parser=cloud_parser)
+        if selected_suffix == ".xlsx":
+            explanation = "表格内容已作为本地草稿读取；AI 整理暂不支持 Excel，请直接编辑草稿或另存为 CSV。"
+            dialog.ai_button.setToolTip(explanation)
+            dialog.cloud_button.setToolTip(explanation)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
         try:

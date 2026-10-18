@@ -2,9 +2,9 @@
 
 DeskCare 是一个 Windows 本地优先的数字健康习惯辅助与今日任务联动工具。它不是医疗诊断器、生产力评分器或全天候行为监视器。
 
-## 当前开发阶段：M8
+## 当前开发阶段：M0–M13 已实现，等待实机验收
 
-M8 在既有 M0–M7 基础上增加默认隐藏的可移动桌面伙伴、快捷任务/情境操作和可选本地语音草稿输入。M8 代码已通过自动化回归；语音实机与新发布包仍待验证。
+DeskCare 已实现 M0–M13 的核心功能，并补上 XLSX 清单导入与小芽吉祥物贴边半隐藏。代码级自动化回归和 Windows 发布包启动检查已通过；真实麦克风/模型/API、不同 DPI/多屏等仍需在用户设备做可选实机验收；详见 `PROGRESS.md`。
 
 - “今日”“使用统计”“状态与报告”“设置与隐私”四页导航；
 - 系统托盘打开、暂停监测、退出；没有系统托盘时回退到可见窗口退出；
@@ -17,12 +17,12 @@ M8 在既有 M0–M7 基础上增加默认隐藏的可移动桌面伙伴、快�
 - SQLite 增量迁移保存独立同意状态和按日类别聚合；应用明细需另行授权，只保存规范化进程名和每日活跃时长，不保存完整路径；
 - 使用统计页提供最近 7 天按应用累计的时长；撤回应用明细授权会清除已保存的应用级数据；
 - 休息提醒可显示可关闭、可跳过的轻柔活动建议，不作医学判断或疗效承诺；
-- 可在设置或托盘显式开启桌面伙伴；默认隐藏、可拖动/隐藏；提供任务快速添加、勾选完成和情境选择；
+- 可在设置或托盘显式开启桌面伙伴；默认隐藏、可拖动/隐藏；拖到屏幕左右边缘会收成小芽吉祥物半露状态，点击即可展开；提供任务快速添加、勾选完成和情境选择；
 - 可选按住录音的本地语音输入：需要单独安装 Vosk 运行库并选择用户自行下载的离线模型；录音只在内存中，松开后识别成草稿，需手动确认后才保存；失败不回退云服务；
 - 设置页支持经确认后清除已保存的活动聚合，不偷偷改变监测授权；
 - 今日页支持手工添加、编辑、删除和状态修改；
-- 支持用户主动选择 `.txt` / `.md` / `.csv` 文件，先生成可编辑任务草稿预览，再由用户确认入库；
-- 文本导入支持 UTF-8/BOM、Markdown 清单、保守的时间与预计时长提示；CSV 使用严格列校验和 ISO 日期格式；
+- 支持用户主动选择 `.txt` / `.md` / `.csv` / `.xlsx` 文件，先生成可编辑任务草稿预览，再由用户确认入库；
+- 文本导入支持 UTF-8/BOM、Markdown 清单、保守的时间与预计时长提示；CSV/XLSX 使用严格列校验和 ISO 日期格式；XLSX 仅读取第一个工作表值，不执行公式；
 - 导入限制文件大小、行长度和任务数量，错误列名、损坏 CSV、空文件、重复标题和模糊时间会在确认前明确显示；
 - SQLite v2 增量迁移保存已确认任务，不保存源文件路径或原文；取消预览不会写入任务库；
 - 用户输入的无时区 ISO 截止时间按本地民用时间保存为带时区值，避免跨模块比较异常；
@@ -32,7 +32,7 @@ M8 在既有 M0–M7 基础上增加默认隐藏的可移动桌面伙伴、快�
 - 单实例运行：第二次启动只请求已有窗口显示，不会重复采样或打开第二份数据库连接；
 - 设置页提供带二次确认的全部本地数据清除，包含授权状态、活动、任务、提醒和 BodyLog；
 - `scripts/build_windows.ps1` 提供 Windows PyInstaller onedir 构建入口，`scripts/run_baseline.py` 提供可复现的合成策略对照；
-- pytest 覆盖默认配置、暂停门控、模拟 provider、四页窗口、SQLite 迁移、跨午夜分桶、长间隔、应用明细授权和聚合、提醒策略、BodyLog、报告事实和 M8 伙伴/语音草稿门控（当前 78 项通过）。
+- pytest 覆盖默认配置、暂停门控、模拟 provider、四页窗口、SQLite 迁移、跨午夜分桶、长间隔、应用明细授权和聚合、提醒策略、BodyLog、报告事实、桌宠贴边和 XLSX 导入（最新数量见 `PROGRESS.md`）。
 - M6 提供可选的本地 Local LLM 任务候选解析和 FactSheet 报告改写：任务只处理用户主动选择的单个任务文件，报告只在用户主动点击后处理当前结构化事实；只允许访问 `localhost` / `127.0.0.1` / `::1`，输出必须经过结构化校验；不可用时自动回到规则/模板。
 - 本地模型候选不会绕过预览和确认，不保存原文或原始模型响应；本地 AI 授权默认关闭，并与活动监测、BodyLog 独立。
 - 本地 AI 的 endpoint 和模型名可在“设置与隐私”中修改并保存到 SQLite；保存只做格式校验，不联网测试；“清除全部本地数据”会一并删除这些配置。
@@ -119,11 +119,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify_windows_package.ps1 -E
 
 ### 已验证发布 ZIP
 
-`release\DeskCare-M7-windows-x64-portable.zip` 是推荐交付物；完整解压后运行 `DeskCare\DeskCare.exe`。`release\DeskCare-M7-windows-x64-onefile.zip` 是单文件备选。两个 M7 运行包均已在独立临时目录重新解压并通过启动验收。`release\DeskCare-M7-source.zip` 只包含可审阅源码、测试、公开资源、示例和文档，不含虚拟环境、构建缓存或用户数据库。版本、大小、SHA-256、已测环境和限制见 `RELEASE_MANIFEST.md`，源码位于 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)。
+`release\DeskCare-M13-final-windows-x64-portable.zip` 是当前推荐交付物；完整解压后运行 `DeskCare.exe`。`release\DeskCare-M13-final-windows-x64-onefile.zip` 是单文件备选。两个包均在独立目录重新解压并通过启动验收。历史发布包保留在 `release/` 供追溯；版本、大小、SHA-256、已测环境和限制见 `RELEASE_MANIFEST.md`，源码位于 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)。
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\release\DeskCare-M7-windows-x64-portable.zip
-Get-FileHash -Algorithm SHA256 .\release\DeskCare-M7-windows-x64-onefile.zip
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-M13-final-windows-x64-portable.zip
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-M13-final-windows-x64-onefile.zip
 ```
 
 ### 可复现策略对照
