@@ -331,6 +331,12 @@ class LocalAIService:
         if not self._enabled:
             return fallback_markdown, False
         try:
-            return self.report_narrator.narrate(facts), True
+            # Report AI is intentionally narrower than the full local report:
+            # health check-ins and specific application names stay out of the
+            # model payload even when the user separately enabled those logs.
+            model_facts = dict(facts)
+            model_facts["wellness"] = None
+            model_facts["applications"] = None
+            return self.report_narrator.narrate(model_facts), True
         except Exception:
             return fallback_markdown, False

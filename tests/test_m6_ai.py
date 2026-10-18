@@ -402,6 +402,36 @@ def test_local_ai_report_falls_back_to_template_on_invalid_model_output(tmp_path
     assert used_model is False
 
 
+def test_local_ai_report_does_not_send_wellness_or_app_names_to_model(tmp_path):
+    seen = {}
+
+    class CapturingClient:
+        def request_json(self, _system_prompt, user_text):
+            seen["facts"] = json.loads(user_text)
+            return {
+                "summary_template": "本期覆盖 {covered_minutes_estimate} 分钟。",
+                "suggestions": [],
+            }
+
+        @staticmethod
+        def json_text(value):
+            return json.dumps(value, ensure_ascii=False)
+
+    repository = UsageRepository(tmp_path / "deskcare.sqlite3")
+    service = LocalAIService(repository, initially_enabled=True, client=CapturingClient())
+    facts = _facts()
+    facts["wellness"] = {"recorded_days": 1, "entries": [{"comfort_level": "uncomfortable"}]}
+    facts["applications"] = {"top_apps": [{"name": "私人应用名", "minutes": 60}]}
+
+    markdown, used_model = service.narrate_facts(facts, "模板报告")
+
+    assert used_model is True
+    assert seen["facts"]["wellness"] is None
+    assert seen["facts"]["applications"] is None
+    assert "私人应用名" not in json.dumps(seen["facts"], ensure_ascii=False)
+    assert "AI 辅助摘要" in markdown
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("PySide6") is None,
     reason="PySide6 is required for the M6 UI consent smoke test",

@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from deskcare.domain.types import Task, TaskStatus, WELLNESS_LEVEL_LABELS, WellnessLevel
+from deskcare.domain.display_names import APP_DISPLAY_NAMES, CATEGORY_DISPLAY_NAMES
 from deskcare.importers.loader import parse_selected_file
 from deskcare.services.bodylog_service import BodyLogService
 from deskcare.services.reminder_service import REMINDER_RESPONSES, ReminderSnapshot
@@ -38,33 +39,6 @@ ACTIVITY_TIPS = (
     "也可以轻轻活动肩颈，动作以舒适为准；感觉不适就停下。",
     "可以按自己的感觉换个姿势，或短暂看看远处。",
 )
-
-APP_DISPLAY_NAMES = {
-    "code": "Visual Studio Code",
-    "chrome": "Google Chrome",
-    "msedge": "Microsoft Edge",
-    "firefox": "Firefox",
-    "brave": "Brave",
-    "weixin": "微信",
-    "wechat": "微信",
-    "bilibili": "哔哩哔哩",
-    "qq": "QQ",
-    "teams": "Microsoft Teams",
-    "winword": "Microsoft Word",
-    "excel": "Microsoft Excel",
-    "powerpnt": "Microsoft PowerPoint",
-    "wps": "WPS Office",
-}
-
-CATEGORY_DISPLAY_NAMES = {
-    "CODE": "编程工具",
-    "BROWSER": "浏览器",
-    "MEETING": "会议与通讯",
-    "OFFICE": "办公软件",
-    "OTHER": "其他应用",
-    "UNKNOWN": "暂无法识别",
-}
-
 
 def label(text: str, object_name: str = "") -> QLabel:
     widget = QLabel(text)
@@ -505,6 +479,7 @@ class ReportsPage(QWidget):
         self._report_ai_thread: QThread | None = None
         self._report_ai_worker: _ReportAIWorker | None = None
         self._report_ai_generation = 0
+        self._report_ai_base_markdown = ""
         root = QVBoxLayout(self)
         root.setSpacing(16)
         root.addWidget(label("回顾最近的任务和电脑使用情况。记录只是参考，不是健康或效率评判。", "pageLead"))
@@ -651,6 +626,7 @@ class ReportsPage(QWidget):
             return
         period = self._current_period(self.report_period.currentData() or "daily")
         facts, template_markdown = self.report_service.render(period)
+        self._report_ai_base_markdown = template_markdown
         generation = self._report_ai_generation
         thread = QThread(self)
         worker = _ReportAIWorker(self.local_ai_service, facts, template_markdown)
@@ -677,7 +653,12 @@ class ReportsPage(QWidget):
         if self.local_ai_service is None or not self.local_ai_service.enabled:
             self.refresh_report()
             return
-        self.report_text.setPlainText(markdown)
+        if used_model:
+            self.report_text.setPlainText(
+                f"{markdown}\n\n---\n\n{self._report_ai_base_markdown}"
+            )
+        else:
+            self.report_text.setPlainText(markdown)
         self.report_sources.setText(
             "由本机 AI 协助整理；记录中的时间和数字仍由 DeskCare 提供。"
             if used_model

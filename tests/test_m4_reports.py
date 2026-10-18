@@ -1,4 +1,7 @@
 from datetime import date, timedelta
+import importlib.util
+
+import pytest
 
 from deskcare.domain.types import BreakAction, PolicyDecision, TaskStatus, WellnessLevel
 from deskcare.services.bodylog_service import BodyLogService
@@ -67,3 +70,80 @@ def test_report_is_honest_when_wellness_is_not_authorized_and_week_is_short(tmp_
     assert "未开启状态打卡" in markdown
     assert "不做趋势判断" in markdown
     assert "健康改善" not in markdown
+
+
+def test_app_details_require_separate_consent_and_categories_are_chinese(tmp_path):
+    repository, today = _report_fixture(tmp_path)
+    repository.add_app_usage(today, "wechat", active_seconds=900)
+    repository.add_usage(today, "MEETING", active_seconds=120)
+    service = LocalReportService(repository)
+
+    facts, markdown = service.render(ReportPeriod("daily", today, today))
+
+    assert facts["applications"] is None
+    assert facts["data_quality"]["application_details_enabled"] is False
+    assert "会议与通讯" in markdown
+    assert "MEETING" not in markdown
+    assert "wechat" not in markdown
+    assert "未单独开启应用名称统计" in markdown
+
+
+def test_authorized_app_details_appear_in_report_with_friendly_name(tmp_path):
+    repository, today = _report_fixture(tmp_path)
+    repository.set_consent("app_name_stats", True)
+    repository.add_app_usage(today, "wechat", active_seconds=900)
+    service = LocalReportService(repository)
+
+    facts, markdown = service.render(ReportPeriod("daily", today, today))
+
+    assert facts["applications"]["total_apps"] == 1
+    assert facts["applications"]["top_apps"] == [{"name": "微信", "minutes": 15.0}]
+    assert "微信：约 15.0 分钟" in markdown
+    assert "wechat" not in markdown
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 is required for the report UI integration test",
+)
+def test_ai_summary_does_not_replace_the_factual_report(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from deskcare.services.report_engine import LocalReportService
+    from deskcare.ui.pages import ReportsPage
+
+    app = QApplication.instance() or QApplication([])
+
+    class Controller:
+        @staticmethod
+        def subscribe(_listener):
+            return None
+
+    class LocalAI:
+        enabled = True
+
+        @staticmethod
+        def subscribe(listener):
+            listener(True)
+
+    repository, _today = _report_fixture(tmp_path)
+    page = ReportsPage(
+        Controller(),
+        report_service=LocalReportService(repository),
+        local_ai_service=LocalAI(),
+    )
+    factual_report = page.report_text.toPlainText()
+    page._report_ai_base_markdown = factual_report
+
+    page._on_report_ai_finished(
+        page._report_ai_generation,
+        "## 本机 AI 摘要\n\n整理后的摘要。",
+        True,
+    )
+    displayed = page.report_text.toPlainText()
+
+    assert "整理后的摘要" in displayed
+    assert "---" in displayed
+    assert factual_report in displayed
+    page.close()
+    app.processEvents()

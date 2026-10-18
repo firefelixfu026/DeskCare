@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
+from deskcare.domain.display_names import CATEGORY_DISPLAY_NAMES, display_app_name
 from deskcare.domain.types import WELLNESS_LEVEL_LABELS
 from deskcare.storage.database import UsageRepository
 
@@ -49,6 +50,15 @@ class ReportFactsBuilder:
         for row in usage_rows:
             by_category[row.category] = by_category.get(row.category, 0.0) + row.active_seconds / 60
         activity_enabled = self.repository.get_consent("activity_monitoring") is True
+        app_details_enabled = (
+            activity_enabled and self.repository.get_consent("app_name_stats") is True
+        )
+        app_rows = (
+            self.repository.app_usage_for_period(period.start, period.end)
+            if app_details_enabled
+            else []
+        )
+        visible_app_rows = [row for row in app_rows if row.active_seconds > 0]
         days_with_activity = sum(
             any((row.active_seconds + row.idle_seconds + row.unknown_seconds) > 0 for row in rows)
             for rows in usage_by_day.values()
@@ -94,6 +104,7 @@ class ReportFactsBuilder:
                 "period_days": len(days),
                 "wellness_opt_in": wellness_enabled,
                 "wellness_recorded_days": len(wellness_entries),
+                "application_details_enabled": app_details_enabled,
                 "trend_eligible": period.kind == "weekly" and days_with_activity >= 3,
                 "missing_sections": missing_sections,
             },
@@ -102,11 +113,28 @@ class ReportFactsBuilder:
                 "idle_minutes_estimate": round(idle_seconds / 60, 1),
                 "unknown_minutes_estimate": round(unknown_seconds / 60, 1),
                 "by_category_minutes": {
-                    category: round(minutes, 1)
+                    CATEGORY_DISPLAY_NAMES.get(category, "其他应用"): round(minutes, 1)
                     for category, minutes in sorted(by_category.items())
                     if minutes > 0
                 },
             },
+            "applications": (
+                {
+                    "total_apps": len(visible_app_rows),
+                    "top_apps": [
+                        {
+                            "name": display_app_name(row.app_id),
+                            "minutes": round(row.active_seconds / 60, 1),
+                        }
+                        for row in visible_app_rows[:10]
+                    ],
+                    "other_apps_minutes": round(
+                        sum(row.active_seconds for row in visible_app_rows[10:]) / 60, 1
+                    ),
+                }
+                if app_details_enabled
+                else None
+            ),
             "tasks": {
                 "confirmed_total": len(tasks),
                 "completed_by_user": sum(task.status.value == "done" for task in tasks),
@@ -133,6 +161,7 @@ class ReportFactsBuilder:
             ),
             "sources": {
                 "activity": "usage_daily aggregate" if activity_enabled else "not authorized",
+                "applications": "separately authorized daily application totals" if app_details_enabled else "not authorized",
                 "tasks": "user-confirmed tasks",
                 "reminders": "local reminder_events feedback",
                 "wellness": "user self-report" if wellness_enabled else "not authorized",
@@ -190,7 +219,36 @@ class TemplateNarrator:
                 f"- 提醒卡片显示 {reminders['shown']} 次；你选择“现在休息” {reminders['break_intent_confirmed']} 次、“10 分钟后” {reminders['snoozed']} 次、“跳过” {reminders['skipped']} 次、“时机不合适” {reminders['bad_timing']} 次。",
             ]
         )
-        lines.extend(["", "## BodyLog 自报"])
+        lines.extend(["", "## 电脑使用类别与常用应用"])
+        categories = usage["by_category_minutes"]
+        assert isinstance(categories, Mapping)
+        if categories:
+            lines.extend(
+                f"- {category}：约 {minutes} 分钟。"
+                for category, minutes in sorted(categories.items())
+            )
+        else:
+            lines.append("- 本期间没有可展示的电脑使用类别记录。")
+        applications = facts.get("applications")
+        if applications is None:
+            lines.append("- 未单独开启应用名称统计，因此这里不显示具体应用。")
+        elif not isinstance(applications, Mapping) or applications["total_apps"] == 0:
+            lines.append("- 应用名称统计已开启，但本期间没有可展示的应用记录。")
+        else:
+            app_list = applications["top_apps"]
+            assert isinstance(app_list, list)
+            if app_list:
+                lines.extend(
+                    f"- {app['name']}：约 {app['minutes']} 分钟。"
+                    for app in app_list
+                )
+            if applications["other_apps_minutes"] > 0:
+                lines.append(
+                    f"- 其他应用合计：约 {applications['other_apps_minutes']} 分钟。"
+                )
+            lines.append("- 应用使用时间不代表具体任务内容或任务完成情况。")
+
+        lines.extend(["", "## 今天的状态记录"])
         if wellness is None:
             lines.append("- 未开启状态打卡，因此不提供身体状态总结。")
         elif wellness["recorded_days"] == 0:
@@ -210,13 +268,13 @@ class TemplateNarrator:
         if "activity" in quality["missing_sections"]:
             lines.append("- 如果你需要活动回顾，可以在设置中单独开启活动监测；是否开启由你决定。")
         if "wellness" in quality["missing_sections"]:
-            lines.append("- 如果你愿意，可以在 BodyLog 中主动记录一次舒适度；也可以保持不记录。")
+            lines.append("- 如果你愿意，可以主动记录今天的状态；也可以选择不记录。")
         lines.append("- 如果提醒常常不合适，可以在今日页选择会议/专注/阅读等情境或使用反馈按钮调整当下提示。")
         lines.extend(
             [
                 "",
-                "## 来源",
-                "- 活动：本地 usage_daily 聚合；任务：用户确认后的 tasks；提醒：本地 reminder_events；BodyLog：用户自报。",
+                "## 这些信息从哪里来",
+                "- 电脑使用类别来自活动统计；具体应用仅在你单独开启后纳入。任务和完成状态由你确认，提醒次数来自你的选择，状态记录由你主动填写。",
                 "- 原始窗口标题、网页地址、键盘内容、截图和未选择文件不属于本报告输入。",
             ]
         )
