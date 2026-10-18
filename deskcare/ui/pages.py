@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QMessageBox,
@@ -717,8 +718,12 @@ class SettingsPage(QWidget):
         self.settings_scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
+        self.settings_scroll.setAlignment(
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+        )
         settings_content = QWidget()
         settings_content.setObjectName("settingsContent")
+        settings_content.setMaximumWidth(920)
         root = QVBoxLayout(settings_content)
         root.setSpacing(14)
         root.addWidget(label("哪些信息会被记录、是否使用 AI，都由你决定；每项都可以单独关闭。", "pageLead"))
@@ -788,11 +793,16 @@ class SettingsPage(QWidget):
         )
         personalization_layout.addWidget(self.personalization_feedback)
         self.reset_personalization = QPushButton("恢复默认提醒参数")
+        self.reset_personalization.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
         self.reset_personalization.setEnabled(
             personalization_service is not None and personalization_service.enabled
         )
         self.reset_personalization.clicked.connect(self._reset_personalization)
-        personalization_layout.addWidget(self.reset_personalization)
+        personalization_layout.addWidget(
+            self.reset_personalization, 0, Qt.AlignmentFlag.AlignLeft
+        )
         root.addWidget(personalization_card)
         self.local_ai = QCheckBox("允许本机 AI 帮我整理任务清单和小结（默认关闭）")
         self.local_ai.setChecked(local_ai_service.enabled if local_ai_service is not None else False)
@@ -802,7 +812,10 @@ class SettingsPage(QWidget):
         root.addWidget(self.local_ai)
         self.local_ai_advanced_button = QPushButton("填写本机 AI 连接信息（高级设置）")
         self.local_ai_advanced_button.setCheckable(True)
-        root.addWidget(self.local_ai_advanced_button)
+        self.local_ai_advanced_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
+        root.addWidget(self.local_ai_advanced_button, 0, Qt.AlignmentFlag.AlignLeft)
         local_ai_config = QFrame()
         self.local_ai_config = local_ai_config
         local_ai_config.setObjectName("card")
@@ -859,7 +872,12 @@ class SettingsPage(QWidget):
         cloud_layout.addWidget(self.cloud_ai)
         self.cloud_advanced_button = QPushButton("填写联网 AI 服务信息（高级设置）")
         self.cloud_advanced_button.setCheckable(True)
-        cloud_layout.addWidget(self.cloud_advanced_button)
+        self.cloud_advanced_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
+        cloud_layout.addWidget(
+            self.cloud_advanced_button, 0, Qt.AlignmentFlag.AlignLeft
+        )
         cloud_advanced = QWidget()
         self.cloud_advanced_frame = cloud_advanced
         cloud_advanced_layout = QVBoxLayout(cloud_advanced)
@@ -901,24 +919,36 @@ class SettingsPage(QWidget):
 
         self.pause_button = QPushButton("暂停电脑使用统计" if controller.enabled else "电脑使用统计尚未开启")
         self.pause_button.setEnabled(controller.enabled)
+        self.pause_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
         self.pause_button.clicked.connect(controller.toggle_paused)
-        root.addWidget(self.pause_button)
+        root.addWidget(self.pause_button, 0, Qt.AlignmentFlag.AlignLeft)
         self.clear_usage_button = QPushButton("清除电脑使用记录")
         self.clear_usage_button.setEnabled(collector is not None)
+        self.clear_usage_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
         self.clear_usage_button.clicked.connect(self._clear_usage)
-        root.addWidget(self.clear_usage_button)
+        root.addWidget(self.clear_usage_button, 0, Qt.AlignmentFlag.AlignLeft)
         self.clear_usage_feedback = label("只删除电脑使用记录，不会改变统计开关；删除前会再次确认。", "mutedText")
         root.addWidget(self.clear_usage_feedback)
         self.clear_wellness_button = QPushButton("清除所有状态打卡记录")
         self.clear_wellness_button.setEnabled(bodylog_service is not None)
+        self.clear_wellness_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
         self.clear_wellness_button.clicked.connect(self._clear_wellness)
-        root.addWidget(self.clear_wellness_button)
+        root.addWidget(self.clear_wellness_button, 0, Qt.AlignmentFlag.AlignLeft)
         self.clear_wellness_feedback = label("只删除状态打卡，不会改变开关；删除前会再次确认。", "mutedText")
         root.addWidget(self.clear_wellness_feedback)
         self.clear_all_button = QPushButton("清除 DeskCare 全部本地数据")
         self.clear_all_button.setEnabled(collector is not None)
+        self.clear_all_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
         self.clear_all_button.clicked.connect(self._clear_all_data)
-        root.addWidget(self.clear_all_button)
+        root.addWidget(self.clear_all_button, 0, Qt.AlignmentFlag.AlignLeft)
         root.addWidget(label("将删除电脑使用记录、已保存任务、提醒反馈、状态打卡和授权设置；不会删除程序文件。系统备份中可能仍有副本。", "mutedText"))
         root.addWidget(label("本机 AI 和联网 AI 都是可选项。使用联网 AI 前，DeskCare 会先让你查看并确认要发送的内容。", "mutedText"))
         root.addStretch()

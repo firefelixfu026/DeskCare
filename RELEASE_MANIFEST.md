@@ -2,19 +2,26 @@
 
 生成日期：2026-10-18（Asia/Shanghai）
 
-## M13 Final 当前推荐版本（含 M12 桌宠与 XLSX）
+## M14 Final 当前推荐版本（含圆形贴边伙伴与紧凑设置布局）
 
 | 文件 | 用途 | 大小 | SHA-256 |
 | --- | --- | ---: | --- |
-| `release/DeskCare-M13-final-windows-x64-portable.zip` | 推荐的 onedir 便携包，解压后运行 `DeskCare.exe` | 78,248,578 bytes | `CC0CC5A3848A1D2C0ED464396AE8EB60198EEF2E7E46D2B6904BF1A709303966` |
-| `release/DeskCare-M13-final-windows-x64-onefile.zip` | 单文件备选包，首次启动需自解压 | 75,520,143 bytes | `DE8FAA97B07FFF9DB65701862B049D37AA494C0C94DFA7028EE325B5730865F8` |
+| `release/DeskCare-M14-final-windows-x64-portable.zip` | 推荐的 onedir 便携包，解压后运行 `DeskCare.exe` | 78,248,533 bytes | `4A82D4BA57D56830409A91FAD70D8A5019D79A18190763580BBD9F097E1C3A61` |
+| `release/DeskCare-M14-final-windows-x64-onefile.zip` | 单文件备选包，首次启动需自解压 | 75,522,360 bytes | `8B1929AF0E8A79440D2F492E1322CFB62F43B3AE53F1426365907CCB41346A33` |
 
-## M13 构建与验收
+## M14 构建与验收
 
 - Windows 11，Python 3.12.7，PySide6 6.12.0，PyInstaller 6.22.3；包内包含 Vosk 0.3.45 运行库，不含语音模型。
 - 完整自动化回归：**101 passed, 1 skipped**；`compileall`、`pip check` 通过。跳过项是当前沙箱禁用 socket 的本机模型检测测试。
-- onedir/onefile 均由 `scripts/build_windows.ps1 -Verify` / `-OneFile -Verify` 重新构建并启动验收；M13-final ZIP 在独立目录解压后也分别启动验收通过。
+- M14 onedir/onefile 均由 `scripts/build_windows.ps1 -Verify` / `-OneFile -Verify` 重新构建并启动验收；M14-final ZIP 在独立目录解压后也分别启动验收通过。
 - 不提供签名安装器；未使用真实麦克风、Vosk 模型、云端 API Key 或真实服务商；这些依赖用户设备/选择，见 M8/M9/M13 人工验收文档。
+
+## M13 Final 历史发布包
+
+| 文件 | 用途 | 大小 | SHA-256 |
+| --- | --- | ---: | --- |
+| `release/DeskCare-M13-final-windows-x64-portable.zip` | M13 onedir 便携包 | 78,248,578 bytes | `CC0CC5A3848A1D2C0ED464396AE8EB60198EEF2E7E46D2B6904BF1A709303966` |
+| `release/DeskCare-M13-final-windows-x64-onefile.zip` | M13 单文件备选包 | 75,520,143 bytes | `DE8FAA97B07FFF9DB65701862B049D37AA494C0C94DFA7028EE325B5730865F8` |
 
 ## M9 发布包
 

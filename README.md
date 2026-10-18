@@ -2,9 +2,9 @@
 
 DeskCare 是一个 Windows 本地优先的数字健康习惯辅助与今日任务联动工具。它不是医疗诊断器、生产力评分器或全天候行为监视器。
 
-## 当前开发阶段：M0–M13 已实现，等待实机验收
+## 当前开发阶段：M0–M14 已实现，等待实机体验
 
-DeskCare 已实现 M0–M13 的核心功能，并补上 XLSX 清单导入与小芽吉祥物贴边半隐藏。代码级自动化回归和 Windows 发布包启动检查已通过；真实麦克风/模型/API、不同 DPI/多屏等仍需在用户设备做可选实机验收；详见 `PROGRESS.md`。
+DeskCare 已实现 M0–M14 的核心功能，并补上 XLSX 清单导入、贴边圆形伙伴和更紧凑的设置布局。代码级自动化回归和 Windows 发布包启动检查已通过；真实麦克风/模型/API、不同 DPI/多屏等仍需在用户设备做可选实机验收；详见 `PROGRESS.md`。
 
 - “今日”“使用统计”“状态与报告”“设置与隐私”四页导航；
 - 系统托盘打开、暂停监测、退出；没有系统托盘时回退到可见窗口退出；
@@ -119,11 +119,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify_windows_package.ps1 -E
 
 ### 已验证发布 ZIP
 
-`release\DeskCare-M13-final-windows-x64-portable.zip` 是当前推荐交付物；完整解压后运行 `DeskCare.exe`。`release\DeskCare-M13-final-windows-x64-onefile.zip` 是单文件备选。两个包均在独立目录重新解压并通过启动验收。历史发布包保留在 `release/` 供追溯；版本、大小、SHA-256、已测环境和限制见 `RELEASE_MANIFEST.md`，源码位于 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)。
+`release\DeskCare-M14-final-windows-x64-portable.zip` 是当前推荐交付物；完整解压后运行 `DeskCare.exe`。`release\DeskCare-M14-final-windows-x64-onefile.zip` 是单文件备选。两个包均在独立目录重新解压并通过启动验收。历史发布包保留在 `release/` 供追溯；版本、大小、SHA-256、已测环境和限制见 `RELEASE_MANIFEST.md`，源码位于 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)。
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\release\DeskCare-M13-final-windows-x64-portable.zip
-Get-FileHash -Algorithm SHA256 .\release\DeskCare-M13-final-windows-x64-onefile.zip
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-M14-final-windows-x64-portable.zip
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-M14-final-windows-x64-onefile.zip
 ```
 
 ### 可复现策略对照

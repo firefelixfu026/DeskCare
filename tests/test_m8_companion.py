@@ -154,21 +154,24 @@ def test_companion_docks_as_half_peeking_mascot_and_restores_on_click(tmp_path):
     assert companion._peek_side == "left"
     assert companion.content.isHidden()
     assert companion.peek_button.isVisible()
-    assert companion.width() == 90
-    assert companion.x() == area.left() - 45
+    assert companion.width() == companion.height() == 88
+    assert companion.x() == area.left() - 44
+    assert not companion.mask().isEmpty()
+    assert companion.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
     QTest.mouseClick(companion.peek_button, Qt.MouseButton.LeftButton)
 
     assert companion._peek_side is None
     assert companion.content.isVisible()
     assert companion.width() == 300
+    assert companion.mask().isEmpty()
     assert companion.x() == area.left()
 
     companion._begin_drag(QPoint(companion.x() + 20, companion.y() + 20))
     companion._move_drag(QPoint(area.right() - companion.width() + 25, area.top() + 70))
     companion._finish_drag()
     assert companion._peek_side == "right"
-    assert companion.x() == area.right() - 45
+    assert companion.x() == area.right() - 43
     companion.hide()
     companion.close()
 

@@ -6,7 +6,15 @@ import importlib.util
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QRect, QThread, QTimer, Qt, Signal, Slot
-from PySide6.QtGui import QColor, QCursor, QPainter, QPainterPath, QPen
+from PySide6.QtGui import (
+    QColor,
+    QCursor,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QRadialGradient,
+    QRegion,
+)
 from PySide6.QtMultimedia import QAudioSource, QMediaDevices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -48,6 +56,15 @@ class SproutMascot(QWidget):
         scale = min(self.width(), self.height()) / 64.0
         painter.translate((self.width() - 64 * scale) / 2, (self.height() - 64 * scale) / 2)
         painter.scale(scale, scale)
+
+        if self.interactive:
+            badge = QRadialGradient(26, 20, 48, 25, 19)
+            badge.setColorAt(0, QColor("#F3FFF8"))
+            badge.setColorAt(0.72, QColor("#D5F0E2"))
+            badge.setColorAt(1, QColor("#B7DDC9"))
+            painter.setPen(QPen(QColor("#367A6C"), 1.8))
+            painter.setBrush(badge)
+            painter.drawEllipse(3, 3, 58, 58)
 
         body = QPainterPath()
         body.moveTo(32, 19)
@@ -129,10 +146,11 @@ class CompanionWindow(QWidget):
         self._audio_buffer = bytearray()
         self._voice_thread = None
         self.setObjectName("deskcareCompanion")
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowTitle("DeskCare 桌面伙伴")
         self.setFixedWidth(300)
         self.setStyleSheet(
-            "QWidget#deskcareCompanion{background:#F7F5F0;color:#24312E;border:1px solid #C9D9D0;border-radius:18px;}"
+            "QWidget#companionContent{background:#F7F5F0;color:#24312E;border:1px solid #C9D9D0;border-radius:20px;}"
             "QLabel{color:#214F45;} QPushButton{background:#2F6B5F;color:white;border:0;border-radius:9px;padding:8px;}"
             "QLineEdit,QComboBox{color:#24312E;background:white;border:1px solid #D7E1DB;border-radius:8px;padding:7px;}"
             "QComboBox QAbstractItemView{color:#24312E;background:#FFFFFF;selection-color:#214F45;selection-background-color:#D4E4D9;outline:0;}"
@@ -141,6 +159,7 @@ class CompanionWindow(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self.content = QWidget(self)
+        self.content.setObjectName("companionContent")
         root = QVBoxLayout(self.content)
         root.setContentsMargins(14, 12, 14, 14)
         title_row = QHBoxLayout()
@@ -205,7 +224,7 @@ class CompanionWindow(QWidget):
         root.addWidget(confirm)
         outer.addWidget(self.content)
         self.peek_button = SproutMascot(interactive=True, parent=self)
-        self.peek_button.setFixedSize(90, 110)
+        self.peek_button.setFixedSize(88, 88)
         self.peek_button.clicked.connect(self._expand_from_edge)
         self.peek_button.hide()
         outer.addWidget(self.peek_button)
@@ -276,12 +295,18 @@ class CompanionWindow(QWidget):
         if side not in {"left", "right"} or self._peek_side is not None:
             return
         self._expanded_size = self.size()
-        y = min(max(self.y(), area.top()), area.bottom() - 109)
+        diameter = 88
+        y = min(max(self.y(), area.top()), area.bottom() - diameter + 1)
         self.content.hide()
         self.peek_button.show()
         self._peek_side = side
-        self.setFixedSize(90, 110)
-        x = area.left() - 45 if side == "left" else area.right() - 45
+        self.setFixedSize(diameter, diameter)
+        self.setMask(QRegion(self.rect(), QRegion.RegionType.Ellipse))
+        x = (
+            area.left() - diameter // 2
+            if side == "left"
+            else area.right() - diameter // 2 + 1
+        )
         self.move(x, y)
 
     def _expand_from_edge(self) -> None:
@@ -290,6 +315,7 @@ class CompanionWindow(QWidget):
         side = self._peek_side
         old_y = self.y()
         self._peek_side = None
+        self.clearMask()
         self.peek_button.hide()
         self.content.show()
         self.setMinimumSize(0, 0)
