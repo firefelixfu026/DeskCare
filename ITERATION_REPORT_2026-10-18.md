@@ -1,7 +1,7 @@
 # DeskCare 本轮迭代报告
 
-日期：2026-10-18  
-项目：`E:\FelixFu\document\ZJU\2026AW\浙客松`  
+日期：2026-10-18
+项目：`E:\FelixFu\document\ZJU\2026AW\浙客松`
 阶段：M14 界面布局与桌面伙伴视觉打磨
 
 ## 本轮完成
