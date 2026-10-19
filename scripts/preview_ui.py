@@ -81,11 +81,30 @@ def main():
         window.companion.show()
         app.processEvents()
         window.companion.grab().save(str(args.output / "companion.png"))
+        companion = window.companion
+        companion.set_presentation("mascot", persist=False)
+        for name, level in (("comfortable", WellnessLevel.COMFORTABLE),
+                            ("uncomfortable", WellnessLevel.SOME_DISCOMFORT),
+                            ("skip", WellnessLevel.PREFER_NOT_TO_SAY)):
+            window.bodylog_service.save_today(level)
+            app.processEvents()
+            companion.grab().save(str(args.output / f"mascot-{name}.png"))
+        companion.mascot.set_variant("drag")
+        app.processEvents()
+        companion.grab().save(str(args.output / "mascot-drag.png"))
+        for side in ("left", "right"):
+            companion._dock_to_edge(side, app.primaryScreen().availableGeometry())
+            app.processEvents()
+            companion.grab().save(str(args.output / f"mascot-peek-{side}.png"))
+            companion._expand_from_edge()
+        companion._show_quick_panel()
+        app.processEvents()
+        companion.grab().save(str(args.output / "mascot-tasks.png"))
         window.companion.hide()
         window._allow_close = True
         window.close()
         gc.collect()
-    print(f"Rendered nine fictional-data previews to {args.output}")
+    print(f"Rendered sixteen fictional-data previews to {args.output}")
 
 
 if __name__ == "__main__":

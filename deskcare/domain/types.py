@@ -33,7 +33,7 @@ class WellnessLevel(str, Enum):
 
 WELLNESS_LEVEL_LABELS = {
     WellnessLevel.COMFORTABLE: "无明显不适",
-    WellnessLevel.SOME_DISCOMFORT: "有些不适",
+    WellnessLevel.SOME_DISCOMFORT: "有点不适",
     WellnessLevel.PREFER_NOT_TO_SAY: "不想记录",
 }
 

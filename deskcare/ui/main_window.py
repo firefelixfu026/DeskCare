@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
         self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation, 1)
-        version = QLabel("DeskCare · UI2")
+        version = QLabel("DeskCare · UI3")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
@@ -178,8 +178,11 @@ class MainWindow(QMainWindow):
         shell_layout.addWidget(content, 1)
         self.setCentralWidget(shell)
         self.companion = CompanionWindow(
-            self.task_service, self.reminder_coordinator, self.repository
+            self.task_service, self.reminder_coordinator, self.repository,
+            bodylog_service=self.bodylog_service,
         )
+        self.settings_page.companion_style_changed.connect(self.companion.set_presentation)
+        self.companion.presentation_changed.connect(self._sync_companion_style)
         self.companion.hide_requested.connect(
             lambda: self.settings_page.companion_enabled.setChecked(False)
         )
@@ -193,6 +196,12 @@ class MainWindow(QMainWindow):
             self.companion.raise_()
         else:
             self.companion.hide()
+
+    def _sync_companion_style(self, presentation):
+        combo = self.settings_page.companion_style
+        combo.blockSignals(True)
+        combo.setCurrentIndex(combo.findData(presentation))
+        combo.blockSignals(False)
 
     def _open_wellness_settings(self) -> None:
         self.navigation.setCurrentRow(4)
@@ -234,6 +243,7 @@ class MainWindow(QMainWindow):
         self.reports_page.refresh_report()
         self.companion.hide()
         self.settings_page.companion_enabled.setChecked(False)
+        self.companion.set_presentation("panel", persist=False)
 
     def _apply_style(self) -> None:
         apply_theme(QApplication.instance())

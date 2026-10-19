@@ -1,0 +1,42 @@
+{
+  "provider": "built-in image_gen",
+  "mode": "background-extraction",
+  "states": {
+    "drag": {
+      "source_attachment": "codex-clipboard-cb57310a-2a51-4a2c-ad12-c35c36325acc.png",
+      "generated_basename": "exec-3d66fe69-d520-42fb-9c3d-078c2148e2f6.png",
+      "target": "assets/mascot/drag.png",
+      "prompt": "Use case: background-extraction. Asset type: supplied DeskCare desktop mascot cutout. Input image 1 is the EDIT TARGET, not a loose style reference. Change ONLY the backdrop into genuine alpha transparency. Preserve this exact supplied character pixel-faithfully: face, expression, mint hair, sprout, cream/green hoodie, embroidered motifs, charms, limbs, shoes, line work and soft colors. Keep the exact dangling pose held by the hood and the dangling hood reaching the top of the canvas; preserve the small motion marks. No redesign, recoloring, extra characters, checkerboard, white rectangle, shadow, ground or added text. Keep the entire existing visible artwork in frame with clean anti-aliased silhouette, including fine hair. Output one single PNG with a genuinely transparent background, not a collage."
+    },
+    "uncomfortable": {
+      "source_attachment": "codex-clipboard-63942785-83ce-4f48-9b6a-40765ae4badf.png",
+      "generated_basename": "exec-32e02439-2add-4609-9ea4-bd1989501f64.png",
+      "target": "assets/mascot/uncomfortable.png",
+      "prompt": "Use case: background-extraction. Asset type: supplied DeskCare desktop mascot cutout. Input image 1 is the EDIT TARGET, not a loose style reference. Change ONLY the backdrop into genuine alpha transparency. Preserve this exact supplied character pixel-faithfully: face, expression, mint hair, sprout, cream/green hoodie, embroidered motifs, charms, limbs, shoes, line work and soft colors. Keep the exact hand-to-forehead expression and standing pose, including small sweat marks. No redesign, recoloring, extra characters, checkerboard, white rectangle, shadow, ground or added text. Keep the entire existing visible artwork in frame with clean anti-aliased silhouette, including fine hair. Output one single PNG with a genuinely transparent background, not a collage."
+    },
+    "comfortable": {
+      "source_attachment": "codex-clipboard-dc090fe7-456e-42b1-8f3c-e59e96d5b844.png",
+      "generated_basename": "exec-faa8f2ad-4470-481c-9c42-8dd21fb095a2.png",
+      "target": "assets/mascot/comfortable.png",
+      "prompt": "Use case: background-extraction. Asset type: supplied DeskCare desktop mascot cutout. Input image 1 is the EDIT TARGET, not a loose style reference. Change ONLY the backdrop into genuine alpha transparency. Preserve this exact supplied character pixel-faithfully: face, expression, mint hair, sprout, cream/green hoodie, embroidered motifs, charms, limbs, shoes, line work and soft colors. Keep the exact happy open-arm hopping pose and the small floating flowers, leaves and sparkles. No redesign, recoloring, extra characters, checkerboard, white rectangle, shadow, ground or added text. Keep the entire existing visible artwork in frame with clean anti-aliased silhouette, including fine hair. Output one single PNG with a genuinely transparent background, not a collage."
+    },
+    "skip": {
+      "source_attachment": "codex-clipboard-40fd1790-e7de-41c2-8d25-0aaf65885a97.png",
+      "generated_basename": "exec-4d018827-a8d4-403f-8dce-2dff87eaf82f.png",
+      "target": "assets/mascot/skip.png",
+      "prompt": "Use case: background-extraction. Asset type: supplied DeskCare desktop mascot cutout. Input image 1 is the EDIT TARGET, not a loose style reference. Change ONLY the backdrop into genuine alpha transparency. Preserve this exact supplied character pixel-faithfully: face, expression, mint hair, sprout, cream/green hoodie, embroidered motifs, charms, limbs, shoes, line work and soft colors. Keep the exact downcast standing pose, swirl, sigh puff and ellipsis speech bubble. No redesign, recoloring, extra characters, checkerboard, white rectangle, shadow, ground or added text. Keep the entire existing visible artwork in frame with clean anti-aliased silhouette, including fine hair. Output one single PNG with a genuinely transparent background, not a collage."
+    },
+    "peek-left": {
+      "source_attachment": "codex-clipboard-d43ee129-d3c8-4a4b-a15f-e80e3a25134f.png",
+      "generated_basename": "exec-5a336ec1-4969-4313-be94-42f3c60f10c8.png",
+      "target": "assets/mascot/peek-left.png",
+      "prompt": "Use case: background-extraction. Asset type: supplied DeskCare desktop mascot cutout. Input image 1 is the EDIT TARGET, not a loose style reference. Change ONLY the backdrop into genuine alpha transparency. Preserve this exact supplied character pixel-faithfully: face, expression, mint hair, sprout, cream/green hoodie, embroidered motifs, charms, limbs, shoes, line work and soft colors. Remove the entire beige wall on the LEFT as well as the white background. Keep exactly the visible character peeking out from the left edge, including hands. Do not invent the occluded parts. Align the wall-contact edge of the character at the left edge of the transparent canvas. No redesign, recoloring, extra characters, checkerboard, white rectangle, shadow, ground or added text. Keep the entire existing visible artwork in frame with clean anti-aliased silhouette, including fine hair. Output one single PNG with a genuinely transparent background, not a collage."
+    },
+    "peek-right": {
+      "source_attachment": "codex-clipboard-fa2da31a-cae9-4801-8d3c-dd236441494a.png",
+      "generated_basename": "exec-e281ca0f-9d13-4856-b4a4-0fd8bf8c694c.png",
+      "target": "assets/mascot/peek-right.png",
+      "prompt": "Use case: background-extraction. Asset type: supplied DeskCare desktop mascot cutout. Input image 1 is the EDIT TARGET, not a loose style reference. Change ONLY the backdrop into genuine alpha transparency. Preserve this exact supplied character pixel-faithfully: face, expression, mint hair, sprout, cream/green hoodie, embroidered motifs, charms, limbs, shoes, line work and soft colors. Remove the entire beige wall on the RIGHT as well as the white background. Keep exactly the visible character peeking out from the right edge, including hands. Do not invent the occluded parts. Align the wall-contact edge of the character at the right edge of the transparent canvas. No redesign, recoloring, extra characters, checkerboard, white rectangle, shadow, ground or added text. Keep the entire existing visible artwork in frame with clean anti-aliased silhouette, including fine hair. Output one single PNG with a genuinely transparent background, not a collage."
+    }
+  }
+}

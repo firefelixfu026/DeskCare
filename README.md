@@ -2,9 +2,9 @@
 
 DeskCare 是一个 Windows 本地优先的数字健康习惯辅助与今日任务联动工具。它不是医疗诊断器、生产力评分器或全天候行为监视器。
 
-## 当前开发阶段：UI2 交互细节更新，等待 Windows 人工体验
+## 当前开发阶段：UI3 双模式桌面伙伴，等待 Windows 人工体验
 
-UI2 在 UI1 五项左侧导航（今日任务、使用统计、状态打卡、日报与周报、设置与隐私）的基础上，统一浅色弹窗和无原生黑框的下拉/数字控件，图表从上一帧平滑过渡，状态页增加近七天自主记录，并简化桌面伙伴、移除内置语音输入。应用数据和独立授权规则保持原有语义。新包说明见 `docs/UI2_使用说明.md`。
+UI2 在 UI1 五项左侧导航（今日任务、使用统计、状态打卡、日报与周报、设置与隐私）的基础上，统一浅色弹窗和无原生黑框的下拉/数字控件，图表从上一帧平滑过渡，状态页增加近七天自主记录，并简化桌面伙伴、移除内置语音输入。应用数据和独立授权规则保持原有语义。UI3 新增简洁面板/吉祥物切换，三种表情只对应今天主动保存的状态打卡，并使用独立拖动和左右贴边图。新包说明见 `docs/UI3_使用说明.md`。
 
 DeskCare 已实现 M0–M18 的代码阶段工作，包括 XLSX 清单导入、贴边圆形伙伴、任务/提醒/报告闭环和演示数据隔离。M15–M18 自动化回归已覆盖新增数据留痕与异常路径；本轮 Windows 新发布包和真实设备验收以 `PROGRESS.md` 的最新记录为准。真实模型/API、不同 DPI/多屏和普通用户可用性仍需实机验收。
 
@@ -123,10 +123,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify_windows_package.ps1 -E
 
 ### 已验证发布 ZIP
 
-`release\DeskCare-UI2-windows-x64-portable.zip` 是本轮界面更新的便携交付物；完整解压后，进入内层 `DeskCare-UI2` 文件夹运行 `DeskCare-UI2.exe`。实际桌面启动与体验仍需用户确认；本轮使用离屏截图与自动化验证，没有操作用户桌面。SHA-256 见 `release/DeskCare-UI2-SHA256.txt`。M18r1 和更早版本保留供追溯；源码仓库为 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)，本轮远端同步状态请看 `PROGRESS.md`，不要把本地完成等同于已推送。
+`release\DeskCare-UI3-windows-x64-portable.zip` 是本轮界面更新的便携交付物；完整解压后，进入内层 `DeskCare-UI3` 文件夹运行 `DeskCare-UI3.exe`。本轮先做离屏验证，再获用户授权完成独立演示实例的部分实机走查；三种表情与任务联动已验证，贴边/快捷键盘/托盘等剩余项见 UI3 报告。SHA-256 见 `release/DeskCare-UI3-SHA256.txt`。M18r1 和更早版本保留供追溯；源码仓库为 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)，本轮远端同步状态请看 `PROGRESS.md`，不要把本地完成等同于已推送。
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\release\DeskCare-UI2-windows-x64-portable.zip
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-UI3-windows-x64-portable.zip
 ```
 
 ### 可复现策略对照

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QRect, Qt, Signal
+from datetime import date
+
+from PySide6.QtCore import QEvent, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QCursor,
@@ -20,12 +22,14 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QMenu,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-from deskcare.domain.types import TaskStatus
+from deskcare.domain.types import TaskStatus, WellnessLevel, WELLNESS_LEVEL_LABELS
+from deskcare.ui.mascot import MascotSurface
 from deskcare.ui.theme import STYLE, apply_theme
 
 
@@ -104,12 +108,21 @@ class CompanionWindow(QWidget):
 
     hide_requested = Signal()
     open_main_requested = Signal()
+    presentation_changed = Signal(str)
 
-    def __init__(self, task_service=None, reminder_coordinator=None, repository=None, parent=None):
+    def __init__(self, task_service=None, reminder_coordinator=None, repository=None, parent=None,
+                 *, bodylog_service=None):
         super().__init__(parent, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.task_service = task_service
         self.reminder_coordinator = reminder_coordinator
         self.repository = repository
+        self.bodylog_service = bodylog_service
+        self.presentation = "panel"
+        self._mascot_panel_open = False
+        self._mascot_state = "skip"
+        self._mascot_press = None
+        self._mascot_dragged = False
+        self._state_day = date.today()
         self._drag_offset = None
         self._peek_side: str | None = None
         self._expanded_size = None
@@ -140,6 +153,11 @@ class CompanionWindow(QWidget):
         title.setStyleSheet("font-size:15px;font-weight:700")
         title_row.addWidget(title)
         title_row.addStretch()
+        self.back_to_mascot = QPushButton("返回")
+        self.back_to_mascot.setObjectName("secondaryButton")
+        self.back_to_mascot.clicked.connect(self._show_mascot)
+        self.back_to_mascot.hide()
+        title_row.addWidget(self.back_to_mascot)
         hide_button = QPushButton("隐藏")
         hide_button.setFixedWidth(58)
         hide_button.clicked.connect(self._hide_companion)
@@ -178,10 +196,27 @@ class CompanionWindow(QWidget):
         self.peek_button.clicked.connect(self._expand_from_edge)
         self.peek_button.hide()
         outer.addWidget(self.peek_button)
+        self.mascot = MascotSurface(self)
+        self.mascot.installEventFilter(self)
+        self.mascot.silhouette_changed.connect(self._sync_mascot_mask)
+        self.mascot.hide()
+        outer.addWidget(self.mascot)
         if self.task_service is not None:
             self.task_service.subscribe(self.refresh_tasks)
+        if self.reminder_coordinator is not None and hasattr(self.reminder_coordinator, "subscribe"):
+            self.reminder_coordinator.subscribe(self._sync_reminder_mode)
         self.refresh_tasks()
         self.adjustSize()
+        saved_style = self.repository.get_setting("companion_style", "panel") if self.repository else "panel"
+        self.set_presentation(saved_style if saved_style in {"panel", "mascot"} else "panel", persist=False)
+        if self.bodylog_service is not None:
+            self.bodylog_service.subscribe(self._sync_wellness)
+        else:
+            self._sync_wellness(False)
+        self._day_timer = QTimer(self)
+        self._day_timer.setInterval(60_000)
+        self._day_timer.timeout.connect(self._check_day)
+        self._day_timer.start()
         screen = QApplication.primaryScreen()
         if screen is not None:
             area = screen.availableGeometry()
@@ -205,6 +240,43 @@ class CompanionWindow(QWidget):
         super().mouseReleaseEvent(event)
 
     def eventFilter(self, watched, event):
+        if watched is getattr(self, "mascot", None):
+            if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                self._mascot_press = event.globalPosition().toPoint()
+                self._mascot_dragged = False
+                self._begin_drag(self._mascot_press)
+                return True
+            if event.type() == QEvent.Type.MouseMove and self._mascot_press is not None:
+                position = event.globalPosition().toPoint()
+                if event.buttons() & Qt.MouseButton.LeftButton:
+                    if (position - self._mascot_press).manhattanLength() >= QApplication.startDragDistance():
+                        if self._peek_side is not None:
+                            self._expand_from_edge()
+                        self._mascot_dragged = True
+                        self.mascot.set_variant("drag")
+                        self.mascot.setCursor(Qt.CursorShape.ClosedHandCursor)
+                        self._move_drag(position)
+                return True
+            if event.type() == QEvent.Type.MouseButtonRelease and self._mascot_press is not None:
+                dragged = self._mascot_dragged
+                self._mascot_press = None
+                if dragged:
+                    self._finish_drag()
+                else:
+                    self._drag_offset = None
+                self._mascot_dragged = False
+                self.mascot.setCursor(Qt.CursorShape.OpenHandCursor)
+                if not dragged:
+                    if self._peek_side is not None:
+                        self._expand_from_edge()
+                    else:
+                        self._show_quick_panel()
+                else:
+                    self._show_current_artwork()
+                return True
+            if event.type() == QEvent.Type.ContextMenu:
+                self._mascot_menu(event.globalPos())
+                return True
         if watched.objectName() == "companionDragHandle":
             if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
                 self._begin_drag(event.globalPosition().toPoint())
@@ -245,6 +317,18 @@ class CompanionWindow(QWidget):
         if side not in {"left", "right"} or self._peek_side is not None:
             return
         self._expanded_size = self.size()
+        if self.presentation == "mascot":
+            self._mascot_panel_open = False
+            self.content.hide()
+            self.peek_button.hide()
+            self.mascot.show()
+            self._peek_side = side
+            self.setFixedSize(140, 260)
+            self.mascot.set_variant(f"peek-{side}")
+            y = min(max(self.y(), area.top()), area.bottom() - self.height() + 1)
+            self.move(area.left() if side == "left" else area.right() - self.width() + 1, y)
+            self._sync_mascot_mask()
+            return
         diameter = 88
         y = min(max(self.y(), area.top()), area.bottom() - diameter + 1)
         self.content.hide()
@@ -267,6 +351,15 @@ class CompanionWindow(QWidget):
         self._peek_side = None
         self.clearMask()
         self.peek_button.hide()
+        if self.presentation == "mascot":
+            self._show_mascot()
+            screen = QApplication.screenAt(self.frameGeometry().center()) or QApplication.primaryScreen()
+            if screen is not None:
+                area = screen.availableGeometry()
+                self.move(area.left() if side == "left" else area.right() - self.width() + 1,
+                          min(max(old_y, area.top()), area.bottom() - self.height() + 1))
+            self._expanded_size = None
+            return
         self.content.show()
         self.setMinimumSize(0, 0)
         self.setMaximumSize(16777215, 16777215)
@@ -286,8 +379,110 @@ class CompanionWindow(QWidget):
             self.reminder_coordinator.set_mode(self.mode.currentData())
             self.reminder_coordinator.evaluate()
 
+    def _sync_reminder_mode(self, snapshot):
+        index = self.mode.findData(snapshot.mode)
+        if index >= 0:
+            self.mode.blockSignals(True)
+            self.mode.setCurrentIndex(index)
+            self.mode.blockSignals(False)
+
+    def set_presentation(self, presentation, *, persist=True):
+        if presentation not in {"panel", "mascot"}:
+            raise ValueError("Unknown companion presentation")
+        self._drag_offset = None
+        self._mascot_press = None
+        self._mascot_dragged = False
+        self._peek_side = None
+        self._expanded_size = None
+        self.presentation = presentation
+        if persist and self.repository is not None:
+            self.repository.set_setting("companion_style", presentation)
+        if presentation == "mascot":
+            self._show_mascot()
+        else:
+            self._show_quick_panel()
+        self._keep_on_screen()
+        self.presentation_changed.emit(presentation)
+
+    def _show_mascot(self):
+        self._mascot_panel_open = False
+        self._peek_side = None
+        self.content.hide()
+        self.peek_button.hide()
+        self.mascot.show()
+        self.setFixedSize(210, 300)
+        self.mascot.set_variant(self._mascot_state)
+        self._sync_mascot_mask()
+        self._keep_on_screen()
+
+    def _show_quick_panel(self):
+        self._mascot_panel_open = self.presentation == "mascot"
+        self._peek_side = None
+        self.clearMask()
+        self.mascot.hide()
+        self.peek_button.hide()
+        self.content.show()
+        self.back_to_mascot.setVisible(self.presentation == "mascot")
+        self.setMinimumSize(0, 0)
+        self.setMaximumSize(16777215, 16777215)
+        self.setFixedWidth(300)
+        self.adjustSize()
+        self._keep_on_screen()
+
+    def _keep_on_screen(self):
+        screen = QApplication.screenAt(self.frameGeometry().center()) or QApplication.primaryScreen()
+        if screen is not None:
+            area = screen.availableGeometry()
+            self.move(max(area.left(), min(self.x(), area.right() - self.width() + 1)),
+                      max(area.top(), min(self.y(), area.bottom() - self.height() + 1)))
+
+    def _sync_mascot_mask(self):
+        if self.presentation == "mascot" and not self._mascot_panel_open:
+            region = self.mascot.hit_region.translated(self.mascot.pos())
+            if not region.isEmpty():
+                self.setMask(region)
+
+    def _show_current_artwork(self):
+        self.mascot.set_variant(f"peek-{self._peek_side}" if self._peek_side else self._mascot_state)
+
+    def _sync_wellness(self, enabled):
+        entry = self.bodylog_service.today_entry() if enabled and self.bodylog_service else None
+        level = entry.comfort_level if entry is not None else None
+        self._mascot_state = {
+            WellnessLevel.COMFORTABLE: "comfortable",
+            WellnessLevel.SOME_DISCOMFORT: "uncomfortable",
+            WellnessLevel.PREFER_NOT_TO_SAY: "skip",
+        }.get(level, "skip")
+        state_label = f"今天自报：{WELLNESS_LEVEL_LABELS[level]}" if level is not None else "今天未记录状态"
+        self.mascot.setToolTip(state_label + "\n单击查看任务，拖动移动，右键更多操作")
+        if not self._mascot_dragged:
+            self._show_current_artwork()
+        self._state_day = date.today()
+
+    def _check_day(self):
+        if date.today() != self._state_day:
+            self._sync_wellness(bool(self.bodylog_service and self.bodylog_service.enabled))
+
+    def _mascot_menu(self, position):
+        menu = QMenu(self)
+        menu.addAction("任务与情境", self._show_quick_panel)
+        menu.addAction("打开主窗口", self.open_main_requested.emit)
+        menu.addSeparator()
+        menu.addAction("切换为简洁面板", lambda: self.set_presentation("panel"))
+        menu.addAction("隐藏", self.hide_requested.emit)
+        menu.exec(position)
+
     def _hide_companion(self):
         self.hide_requested.emit()
+
+    def hideEvent(self, event):
+        self._mascot_press = None
+        self._mascot_dragged = False
+        self._drag_offset = None
+        if getattr(self, "mascot", None) is not None:
+            self.mascot.setCursor(Qt.CursorShape.OpenHandCursor)
+            self._show_current_artwork()
+        super().hideEvent(event)
 
     def _add_task(self):
         text = self.task_input.text().strip()

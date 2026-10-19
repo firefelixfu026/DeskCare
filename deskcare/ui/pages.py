@@ -850,6 +850,7 @@ class SettingsPage(QWidget):
     monitoring_changed = Signal(bool)
     all_data_cleared = Signal()
     companion_visibility_changed = Signal(bool)
+    companion_style_changed = Signal(str)
 
     def __init__(self, config_store, controller, collector=None, bodylog_service=None, local_ai_service=None, personalization_service=None, repository=None, cloud_ai_service=None, parent=None) -> None:
         super().__init__(parent)
@@ -898,6 +899,18 @@ class SettingsPage(QWidget):
         self.companion_enabled.toggled.connect(self._toggle_companion)
         root.addWidget(self.companion_enabled)
         self.companion_enabled.setToolTip("在桌面快捷查看任务和切换情境。")
+        style_row = QHBoxLayout()
+        style_row.addWidget(QLabel("伙伴样式"))
+        self.companion_style = QComboBox()
+        self.companion_style.addItem("简洁面板", "panel")
+        self.companion_style.addItem("吉祥物", "mascot")
+        selected_style = self.repository.get_setting("companion_style", "panel") if self.repository else "panel"
+        self.companion_style.setCurrentIndex(max(0, self.companion_style.findData(selected_style)))
+        self.companion_style.setToolTip("吉祥物表情对应今天主动保存的状态；未开启打卡时不读取状态。")
+        self.companion_style.currentIndexChanged.connect(self._change_companion_style)
+        style_row.addWidget(self.companion_style)
+        style_row.addStretch()
+        root.addLayout(style_row)
 
         self.monitoring = QCheckBox("开启电脑使用统计（默认关闭）")
         self.monitoring.setChecked(controller.enabled)
@@ -1141,6 +1154,12 @@ class SettingsPage(QWidget):
         self._sync(controller.enabled, controller.paused)
         self.settings_scroll.setWidget(settings_content)
         page_layout.addWidget(self.settings_scroll)
+
+    def _change_companion_style(self, _index):
+        style = self.companion_style.currentData()
+        if self.repository is not None:
+            self.repository.set_setting("companion_style", style)
+        self.companion_style_changed.emit(style)
 
     def _toggle_companion(self, enabled: bool) -> None:
         if self.repository is not None:
