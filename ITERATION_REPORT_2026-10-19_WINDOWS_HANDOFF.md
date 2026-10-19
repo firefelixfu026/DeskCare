@@ -101,3 +101,4 @@
 - 设置 `$env:QT_QPA_PLATFORM='offscreen'` 并执行 `& .\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp .pytest-current-audit-20261019`，退出码 0；收集 115 项，1 项跳过，其余通过。跳过为本机 AI localhost socket 探测在当前沙箱不可用。
 - 首次测试尝试因当前会话无项目目录写权限而无法创建 pytest 临时目录；获得项目目录权限后重跑通过。没有启动应用窗口、操作用户桌面或调用真实麦克风。
 - 本次只增加审计/测试记录，没有修改产品代码。实机验收与 GitHub 连接恢复后的远端核验仍是下一步。
+- 最新只读查询确认 GitHub `main` 仍为 `3b392838fcd2997277c36958752273143cbb0712`，本地 `HEAD` 为 `87d377e` 且为快进后代。普通推送尝试未能启动 Git Credential Manager 凭据提示（MSYS `NtCreateDirectoryObject` 权限错误，Git 随后无法读取用户名）；推送后远端再次确认未变化。未使用强制推送或改写远端历史；需在凭据提示可用的环境中完成同步。
