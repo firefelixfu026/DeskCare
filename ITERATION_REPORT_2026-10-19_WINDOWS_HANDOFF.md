@@ -102,3 +102,4 @@
 - 首次测试尝试因当前会话无项目目录写权限而无法创建 pytest 临时目录；获得项目目录权限后重跑通过。没有启动应用窗口、操作用户桌面或调用真实麦克风。
 - 本次只增加审计/测试记录，没有修改产品代码。实机验收与 GitHub 连接恢复后的远端核验仍是下一步。
 - 最新只读查询确认 GitHub `main` 仍为 `3b392838fcd2997277c36958752273143cbb0712`，本地 `HEAD` 为 `87d377e` 且为快进后代。普通推送尝试未能启动 Git Credential Manager 凭据提示（MSYS `NtCreateDirectoryObject` 权限错误，Git 随后无法读取用户名）；推送后远端再次确认未变化。未使用强制推送或改写远端历史；需在凭据提示可用的环境中完成同步。
+- 重新计算 M18r1 两个 ZIP 的 SHA-256，与 `release/DeskCare-M18r1-SHA256.txt` 完全一致。对 onedir/onefile EXE 的 `Get-AuthenticodeSignature` 结果均为 `NotSigned`；因此没有签名发布者身份，Windows 可能呈现未知发布者/信誉提示。没有运行 EXE，实际对话框或 SmartScreen 行为仍未验证；如需签名发布，需要项目方提供证书并在签名后重新构建/验收。
