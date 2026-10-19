@@ -68,6 +68,8 @@ def test_report_is_honest_when_wellness_is_not_authorized_and_week_is_short(tmp_
     assert facts["data_quality"]["trend_eligible"] is False
     assert facts["wellness"] is None
     assert "未开启状态打卡" in markdown
+    assert "本报告不包含个人状态记录" in markdown
+    assert "身体状态总结" not in markdown
     assert "不做趋势判断" in markdown
     assert "健康改善" not in markdown
 

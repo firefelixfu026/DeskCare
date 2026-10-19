@@ -295,11 +295,19 @@ class ImportPreviewDialog(QDialog):
     def _drafts_from_table(self) -> tuple[list[TaskDraft], list[str]]:
         drafts: list[TaskDraft] = []
         errors: list[str] = []
+
+        def cell_text(row: int, column: int) -> str:
+            item = self.table.item(row, column)
+            return item.text() if item is not None else ""
+
         for row in range(self.table.rowCount()):
-            title = self.table.item(row, 0).text().strip()
+            # Qt emits itemChanged while an importer is still filling the
+            # remaining columns. Treat those transiently absent cells as empty
+            # user input instead of raising inside the signal callback.
+            title = cell_text(row, 0).strip()
             title_issue = validate_title(title, row + 1)
-            due, due_error = _parse_due(self.table.item(row, 1).text())
-            raw_minutes = self.table.item(row, 2).text().strip()
+            due, due_error = _parse_due(cell_text(row, 1))
+            raw_minutes = cell_text(row, 2).strip()
             minutes = None
             if raw_minutes:
                 try:
@@ -312,10 +320,12 @@ class ImportPreviewDialog(QDialog):
                 errors.append(title_issue.message)
             if due_error:
                 errors.append(due_error)
+            if not title:
+                continue
             if title_issue or due_error or (raw_minutes and minutes is None):
                 continue
             notes = tuple(
-                note for note in self.table.item(row, 3).text().split(", ") if note and note != "规则解析；请核对"
+                note for note in cell_text(row, 3).split(", ") if note and note != "规则解析；请核对"
             )
             drafts.append(TaskDraft(title, due, minutes, row + 1, notes))
         errors.extend(issue.message for issue in duplicate_issues(drafts))

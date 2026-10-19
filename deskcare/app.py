@@ -18,7 +18,13 @@ from deskcare.services.reminder_service import ReminderCoordinator
 from deskcare.services.personalization_service import ReminderPersonalizationService
 from deskcare.services.report_engine import LocalReportService
 from deskcare.services.task_service import TaskService
-from deskcare.storage.database import UsageRepository, get_default_database_path
+from deskcare.demo_scenario import prepare_demo_scenario
+from deskcare.storage.database import (
+    UsageRepository,
+    get_default_database_path,
+    get_demo_database_path,
+    get_demo_scenario_database_path,
+)
 from deskcare.runtime import SingleInstanceGuard
 from deskcare.ui.main_window import MainWindow
 from deskcare.ui.tray import TrayController
@@ -35,15 +41,27 @@ def create_application(argv: list[str] | None = None):
     # another local tool; normal ``python -m deskcare`` still creates it here.
     raw_argv = list(sys.argv if argv is None else argv)
     demo_requested = "--demo" in raw_argv
-    qt_argv = [item for item in raw_argv if item != "--demo"] or ["deskcare"]
+    demo_scenario_requested = "--demo-scenario" in raw_argv
+    demo_mode = demo_requested or demo_scenario_requested or os.name != "nt"
+    qt_argv = [item for item in raw_argv if item not in {"--demo", "--demo-scenario"}] or ["deskcare"]
     qt_app = QApplication.instance() or QApplication(qt_argv)
     qt_app.setApplicationName("DeskCare")
-    qt_app.setApplicationVersion("2.0.0-m9")
+    qt_app.setApplicationVersion("2.0.0-m18")
     instance_guard = SingleInstanceGuard(parent=qt_app)
     if not instance_guard.primary:
         return qt_app, None, None
     config_store = ConfigStore()
-    repository = UsageRepository(get_default_database_path())
+    if demo_scenario_requested:
+        database_path = get_demo_scenario_database_path()
+    elif demo_mode:
+        database_path = get_demo_database_path()
+    else:
+        database_path = get_default_database_path()
+    repository = UsageRepository(database_path)
+    if demo_mode:
+        repository.set_setting("demo_mode", "true")
+    if demo_scenario_requested:
+        prepare_demo_scenario(repository)
     saved_app_name_consent = repository.get_consent("app_name_stats") is True
     config_store.config.app_name_stats_enabled = saved_app_name_consent
     saved_consent = repository.get_consent("activity_monitoring")
@@ -59,7 +77,7 @@ def create_application(argv: list[str] | None = None):
     saved_local_ai_consent = repository.get_consent("local_ai")
     initially_local_ai_enabled = saved_local_ai_consent is True
     config_store.config.local_ai_enabled = initially_local_ai_enabled
-    provider = _build_provider(demo_requested, include_app_name=saved_app_name_consent)
+    provider = _build_provider(demo_mode, include_app_name=saved_app_name_consent)
     controller = MonitoringController(provider, initially_enabled=initially_enabled)
     collector = ActivityCollector(controller, repository)
     task_service = TaskService(repository)

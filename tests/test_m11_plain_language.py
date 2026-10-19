@@ -9,9 +9,14 @@ def test_main_surfaces_use_plain_chinese_and_hide_technical_ai_setup_by_default(
 
     QApplication.instance() or QApplication([])
     repository = UsageRepository(tmp_path / "deskcare.sqlite3")
+    repository.set_setting("demo_mode", "true")
+    repository.set_setting("demo_scenario", "true")
     window = MainWindow(
         ConfigStore(), MonitoringController(FakeActivityProvider()), repository=repository
     )
+    assert not window.demo_banner.isHidden()
+    assert "虚构示例" in window.demo_banner.text()
+    assert "预先生成" in window.demo_banner.text()
     settings = window.settings_page
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QSizePolicy
@@ -53,3 +58,36 @@ def test_task_import_ai_actions_are_named_for_regular_users():
     assert dialog.ai_button.text() == "本机 AI 帮我整理"
     assert dialog.cloud_button.text() == "联网 AI 帮我整理"
     dialog.close()
+
+
+def test_reminder_does_not_show_internal_reason_codes_to_users(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from deskcare.domain.types import BreakAction, PolicyDecision
+    from deskcare.sensors.fake import FakeActivityProvider
+    from deskcare.services.consent_service import MonitoringController
+    from deskcare.services.reminder_service import ReminderSnapshot
+    from deskcare.storage.database import UsageRepository
+    from deskcare.ui.pages import TodayPage
+
+    QApplication.instance() or QApplication([])
+    repository = UsageRepository(tmp_path / "plain-reminder.sqlite3")
+    page = TodayPage(
+        MonitoringController(FakeActivityProvider()),
+        repository=repository,
+    )
+    page._sync_reminder(
+        ReminderSnapshot(
+            PolicyDecision(
+                BreakAction.SOFT_NOTIFY,
+                ("FUTURE_INTERNAL_RULE_CODE",),
+                "可以考虑休息一下。",
+                60,
+            ),
+            visible=True,
+        )
+    )
+    text = page.reminder_reason.text()
+    assert "FUTURE_INTERNAL_RULE_CODE" not in text
+    assert "符合温和提醒条件" in text
+    page.close()

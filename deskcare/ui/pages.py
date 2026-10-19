@@ -30,7 +30,11 @@ from deskcare.domain.types import Task, TaskStatus, WELLNESS_LEVEL_LABELS, Welln
 from deskcare.domain.display_names import APP_DISPLAY_NAMES, CATEGORY_DISPLAY_NAMES
 from deskcare.importers.loader import parse_selected_file
 from deskcare.services.bodylog_service import BodyLogService
-from deskcare.services.reminder_service import REMINDER_RESPONSES, ReminderSnapshot
+from deskcare.services.reminder_service import (
+    REMINDER_RESPONSES,
+    ReminderSnapshot,
+    decision_context_summary,
+)
 from deskcare.services.report_engine import LocalReportService, ReportPeriod
 from deskcare.ui.task_dialog import ImportPreviewDialog, TaskFormDialog
 
@@ -253,7 +257,15 @@ class TodayPage(QWidget):
         )
         if not path:
             return
-        result = parse_selected_file(path)
+        try:
+            result = parse_selected_file(path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(
+                self,
+                "无法读取任务清单",
+                f"文件暂时打不开或格式无法识别。原有任务没有改动。\n\n{exc}",
+            )
+            return
         selected_suffix = Path(path).suffix.casefold()
         ai_parser = None
         if selected_suffix != ".xlsx" and self.local_ai_service is not None and self.local_ai_service.enabled:
@@ -326,11 +338,25 @@ class TodayPage(QWidget):
         if not snapshot.visible:
             return
         self.reminder_title.setText("可以考虑留一个短暂空档")
-        self.reminder_body.setText(snapshot.decision.explanation)
-        reasons = " · ".join(snapshot.decision.reason_codes)
+        self.reminder_body.setText(snapshot.decision.human_explanation)
+        reason_labels = {
+            "POSSIBLE_NATURAL_GAP": "出现了可能的自然空档",
+            "SOFT_DELAY_LIMIT_REACHED": "已等到设定的最长提醒时机",
+        }
+        reasons = " · ".join(
+            reason_labels.get(code, "符合温和提醒条件")
+            for code in snapshot.decision.reason_codes
+        )
         response = REMINDER_RESPONSES.get(snapshot.response or "", "")
         suffix = f"最近选择：{response}" if response else ""
-        self.reminder_reason.setText(f"依据：{reasons}。{suffix}")
+        context_summary = (
+            decision_context_summary(snapshot.decision_context)
+            if snapshot.decision_context
+            else ""
+        )
+        self.reminder_reason.setText(
+            f"提醒依据：{context_summary} {reasons}。{suffix}".strip()
+        )
         show_tip = self.repository is None or self.repository.get_setting(
             "activity_tips_enabled", "true"
         ) == "true"
@@ -687,7 +713,15 @@ class ReportsPage(QWidget):
         path, _ = QFileDialog.getSaveFileName(self, "导出 DeskCare 报告", default_name, "Markdown (*.md)")
         if not path:
             return
-        self.report_service.export_markdown(path, period)
+        try:
+            self.report_service.export_markdown(path, period)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(
+                self,
+                "报告没有保存",
+                f"无法写入你选择的位置。请换一个文件夹后重试。\n\n{exc}",
+            )
+            return
         self.report_sources.setText(f"报告已保存到用户选择的位置：{Path(path).name}。未保存原始窗口或键盘内容。")
 
 

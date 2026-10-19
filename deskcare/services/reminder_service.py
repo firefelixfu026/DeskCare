@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 
 from deskcare.domain.break_policy import BreakPolicy
@@ -30,6 +30,40 @@ class ReminderSnapshot:
     event_id: int | None = None
     response: str | None = None
     mode: str = "normal"
+    decision_context: dict[str, object] = field(default_factory=dict)
+
+
+MODE_LABELS = {
+    "normal": "普通工作",
+    "focus": "专注模式",
+    "meeting": "会议中",
+    "reading": "阅读中",
+    "quiet": "安静时段",
+}
+
+
+def decision_context_summary(context: dict[str, object]) -> str:
+    """Summarize a shown reminder without exposing task or app names."""
+
+    parts = [f"当时情境：{MODE_LABELS.get(str(context.get('mode')), '未记录')}"]
+    active = context.get("continuous_active_minutes")
+    if isinstance(active, (int, float)):
+        parts.append(f"连续活跃估计约 {active:g} 分钟")
+    if context.get("observation_state") == "active":
+        parts.append("最近有键鼠活动")
+    if context.get("recent_switch"):
+        parts.append("刚出现程序切换")
+    if context.get("task_marked_done"):
+        parts.append("你刚标记完成一项任务")
+    deadline_seconds = context.get("confirmed_deadline_seconds_remaining")
+    if isinstance(deadline_seconds, (int, float)) and 0 <= deadline_seconds <= 600:
+        parts.append("已确认任务的截止时间临近")
+    config = context.get("policy_config")
+    if isinstance(config, dict):
+        threshold = config.get("break_candidate_minutes")
+        if isinstance(threshold, (int, float)):
+            parts.append(f"当前提醒候选阈值为 {threshold:g} 分钟")
+    return "；".join(parts) + "。"
 
 
 class ReminderCoordinator:
@@ -127,6 +161,7 @@ class ReminderCoordinator:
                 self.snapshot.event_id,
                 self.snapshot.response,
                 mode,
+                self.snapshot.decision_context,
             )
         self._notify()
         return self.snapshot
@@ -189,18 +224,65 @@ class ReminderCoordinator:
             config = self.personalization_service.effective_config(self.policy.config, self.mode)
             decision = decide(context, config)
         else:
+            config = self.policy.config
             decision = self.policy.decide(context)
         self._just_confirmed_task_done = False
         if decision.action is BreakAction.SOFT_NOTIFY:
+            decision_context = {
+                "rule_set": "break_policy_v1",
+                "mode": context.mode,
+                "monitoring_enabled": context.monitored,
+                "manually_paused": context.manual_pause,
+                "observation_state": (
+                    sample.state.value
+                    if sample is not None and sample.observation_ok
+                    else "unknown"
+                ),
+                "idle_seconds": (
+                    round(context.idle_seconds, 1)
+                    if context.idle_seconds is not None
+                    else None
+                ),
+                "continuous_active_minutes": round(
+                    context.continuous_active_minutes, 1
+                ),
+                "recent_switch": context.is_recent_switch,
+                "task_marked_done": context.just_confirmed_task_done,
+                "confirmed_deadline_seconds_remaining": (
+                    round((context.next_confirmed_deadline - current).total_seconds())
+                    if context.next_confirmed_deadline is not None
+                    else None
+                ),
+                "last_response": context.last_response,
+                "last_prompt_age_seconds": (
+                    round((current - context.last_prompt_at).total_seconds())
+                    if context.last_prompt_at is not None
+                    else None
+                ),
+                "last_feedback_age_seconds": (
+                    round((current - context.last_feedback_at).total_seconds())
+                    if context.last_feedback_at is not None
+                    else None
+                ),
+                "postpone_seconds_remaining": (
+                    max(0, round((context.postpone_until - current).total_seconds()))
+                    if context.postpone_until is not None
+                    else 0
+                ),
+                "policy_config": asdict(config),
+            }
             event = self.repository.add_reminder_event(
                 occurred_at=current,
                 decision=decision,
                 mode=self.mode,
                 active_minutes=context.continuous_active_minutes,
+                decision_context=decision_context,
             )
             self._active_event_id = event.id
             self._last_prompt_at = current
-            self.snapshot = ReminderSnapshot(decision, True, event.id, None, self.mode)
+            self.snapshot = ReminderSnapshot(
+                decision, True, event.id, None, self.mode, decision_context
+            )
         elif self._active_event_id is not None and self.controller.is_collecting:
             self.snapshot = ReminderSnapshot(
                 self.snapshot.decision,
@@ -208,6 +290,7 @@ class ReminderCoordinator:
                 self._active_event_id,
                 None,
                 self.mode,
+                self.snapshot.decision_context,
             )
         else:
             self.snapshot = ReminderSnapshot(decision, False, None, None, self.mode)

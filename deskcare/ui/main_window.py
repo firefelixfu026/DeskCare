@@ -105,6 +105,22 @@ class MainWindow(QMainWindow):
         header.addWidget(self.header_state)
         content_layout.addLayout(header)
 
+        self.demo_banner = QLabel()
+        self.demo_banner.setObjectName("demoBanner")
+        self.demo_banner.setWordWrap(True)
+        demo_mode = bool(getattr(self.monitoring_controller, "provider_is_demo", False))
+        if demo_mode:
+            scenario = (
+                self.repository is not None
+                and self.repository.get_setting("demo_scenario") == "true"
+            )
+            self.demo_banner.setText(
+                "演示模式：这里显示的是虚构示例，不是这台电脑的真实使用记录。"
+                + ("任务、休息提醒和状态记录也都是预先生成的演示内容。" if scenario else "")
+            )
+        self.demo_banner.setVisible(demo_mode)
+        content_layout.addWidget(self.demo_banner)
+
         self.pages = QStackedWidget()
         self.today_page = TodayPage(
             self.monitoring_controller,

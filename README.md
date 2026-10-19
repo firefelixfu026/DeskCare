@@ -2,9 +2,9 @@
 
 DeskCare 是一个 Windows 本地优先的数字健康习惯辅助与今日任务联动工具。它不是医疗诊断器、生产力评分器或全天候行为监视器。
 
-## 当前开发阶段：M0–M14 已实现，等待实机体验
+## 当前开发阶段：M0–M18 代码迭代完成，等待 Windows 人工验收
 
-DeskCare 已实现 M0–M14 的核心功能，并补上 XLSX 清单导入、贴边圆形伙伴和更紧凑的设置布局。代码级自动化回归和 Windows 发布包启动检查已通过；真实麦克风/模型/API、不同 DPI/多屏等仍需在用户设备做可选实机验收；详见 `PROGRESS.md`。
+DeskCare 已实现 M0–M18 的代码阶段工作，包括 XLSX 清单导入、贴边圆形伙伴、任务/提醒/报告闭环和演示数据隔离。M15–M18 自动化回归已覆盖新增数据留痕与异常路径；本轮 Windows 新发布包和真实设备验收以 `PROGRESS.md` 的最新记录为准。真实麦克风/模型/API、不同 DPI/多屏和普通用户可用性仍需实机验收。
 
 - “今日”“使用统计”“状态与报告”“设置与隐私”四页导航；
 - 系统托盘打开、暂停监测、退出；没有系统托盘时回退到可见窗口退出；
@@ -18,7 +18,7 @@ DeskCare 已实现 M0–M14 的核心功能，并补上 XLSX 清单导入、贴�
 - 使用统计页提供最近 7 天按应用累计的时长；撤回应用明细授权会清除已保存的应用级数据；
 - 休息提醒可显示可关闭、可跳过的轻柔活动建议，不作医学判断或疗效承诺；
 - 可在设置或托盘显式开启桌面伙伴；默认隐藏、可拖动/隐藏；拖到屏幕左右边缘会收成小芽吉祥物半露状态，点击即可展开；提供任务快速添加、勾选完成和情境选择；
-- 可选按住录音的本地语音输入：需要单独安装 Vosk 运行库并选择用户自行下载的离线模型；录音只在内存中，松开后识别成草稿，需手动确认后才保存；失败不回退云服务；
+- 可选按住录音的本地语音输入：源码运行需安装可选 Vosk 依赖；M18 Windows 发布包已包含 Vosk 运行库，但两者都不包含语音模型，仍需用户自行准备并选择离线模型；录音只在内存中，松开后识别成草稿，需手动确认后才保存；失败不回退云服务；
 - 设置页支持经确认后清除已保存的活动聚合，不偷偷改变监测授权；
 - 今日页支持手工添加、编辑、删除和状态修改；
 - 支持用户主动选择 `.txt` / `.md` / `.csv` / `.xlsx` 文件，先生成可编辑任务草稿预览，再由用户确认入库；
@@ -56,13 +56,15 @@ python -m pip install -e ".[dev]"
 python -m deskcare
 ```
 
-可选本地语音输入：`python -m pip install -e ".[voice]"`，再下载并解压 Vosk 中文模型，在桌面伙伴中选择模型文件夹。模型不随项目/发布包下载或打包。按住“按住说话”录音，松开停止；转写内容只写入草稿框，需再次确认。若麦克风或模型不可用，可直接手动输入。详情见 `docs/M8_语音隐私与人工验收.md`。
+可选本地语音输入：源码运行时执行 `python -m pip install -e ".[voice]"`；M18 Windows 发布包已自带 Vosk 运行库。两种方式都需要另行下载并解压 Vosk 中文模型，再在桌面伙伴中选择模型文件夹（模型不随项目/发布包提供）。按住“按住说话”录音，松开停止；转写内容只写入草稿框，需再次确认。若麦克风或模型不可用，可直接手动输入。详情见 `docs/M8_语音隐私与人工验收.md`。
 
-比赛演示或离线回归时，可以显式使用模拟 provider；模拟数据会在界面中标注，且仍需手动开启活动统计：
+比赛演示或离线回归时，可以显式使用模拟 provider；模拟数据会在界面中标注，且仍需手动开启活动统计。演示模式使用单独数据库 `%LOCALAPPDATA%\DeskCare\demo\deskcare-demo.sqlite3`，不会混入日常活动报告：
 
 ```powershell
 python -m deskcare --demo
 ```
+
+如需直接展示完整产品闭环（虚构任务、模拟活动、休息提醒和反馈、主动状态记录、日报），使用 `python -m deskcare --demo-scenario`。完整流程写入按日期隔离的单独演示库，主窗口和报告均会明确标注数据为虚构；不访问网络、AI 或真实活动 provider。重复启动不会重复生成当天示例。
 
 如果 Windows 上的 pip 因代理或 PyPI SSL 问题无法下载 `setuptools` 构建依赖，可以绕过 editable 构建，直接安装运行/测试依赖；在项目根目录运行时不需要先安装 DeskCare 包：
 
@@ -119,11 +121,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify_windows_package.ps1 -E
 
 ### 已验证发布 ZIP
 
-`release\DeskCare-M14-final-windows-x64-portable.zip` 是当前推荐交付物；完整解压后运行 `DeskCare.exe`。`release\DeskCare-M14-final-windows-x64-onefile.zip` 是单文件备选。两个包均在独立目录重新解压并通过启动验收。历史发布包保留在 `release/` 供追溯；版本、大小、SHA-256、已测环境和限制见 `RELEASE_MANIFEST.md`，源码位于 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)。
+`release\DeskCare-M18r1-windows-x64-portable.zip` 是当前推荐交付物；完整解压后，进入内层 `DeskCare-M18r1` 目录运行 `DeskCare-M18r1.exe`（PowerShell 演示命令为 `.\DeskCare-M18r1.exe --demo-scenario`）。`release\DeskCare-M18r1-windows-x64-onefile.zip` 是单文件备选，exe 位于解压目录中。两份 r1 ZIP 已逐项读取校验，包内 EXE 与构建产物 SHA-256 一致；**本次没有启动 r1 GUI**，实际启动验收仍待目标 Windows 设备确认。SHA-256 见 `release/DeskCare-M18r1-SHA256.txt`；M18、M14 及更早包保留供追溯；源码位于 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)。
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\release\DeskCare-M14-final-windows-x64-portable.zip
-Get-FileHash -Algorithm SHA256 .\release\DeskCare-M14-final-windows-x64-onefile.zip
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-M18r1-windows-x64-portable.zip
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-M18r1-windows-x64-onefile.zip
 ```
 
 ### 可复现策略对照
@@ -147,6 +149,8 @@ pytest -q
 监测只有在用户明确开启后才允许 provider 读取样本；暂停后立即停止读取。非 Windows 环境使用合成模拟 provider，所有演示数字和任务均明确标注为演示数据。
 
 完整产品、技术和隐私约束见 `README_先看我.md` 与 `docs/`。M4 的 BodyLog 与活动监测、任务管理均为独立授权；M5 增加单实例、可清除数据和 Windows 构建；M6 增加可选本地 AI 任务候选链路，但真实模型是否可用仍以本机人工验证为准。
+
+M15–M18 阶段验收、Windows 实机检查与尚未实测边界见 `docs/M15-M18_阶段验收与Windows实机清单.md`；产品定位与当前架构见 `docs/产品定位与技术架构.md`；常见问题排查见 `docs/Windows_常见问题与故障排查.md`。旧版 M10/M11 清单仅记录当时阶段，后续范围以新清单为准。
 
 当前 M1 演示流程见 `docs/M1_演示脚本.md`，M2 演示流程见 `docs/M2_演示脚本.md`，M2 验收记录见 `docs/M2_验收记录.md`，Windows 人工验收清单见 `docs/M2_Windows人工验收清单.md`。
 M3 演示流程见 `docs/M3_演示脚本.md`，M4 演示流程见 `docs/M4_演示脚本.md`，M4 验收记录见 `docs/M4_验收记录.md`。

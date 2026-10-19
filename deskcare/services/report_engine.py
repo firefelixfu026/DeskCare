@@ -96,6 +96,8 @@ class ReportFactsBuilder:
                 "end": period.end.isoformat(),
             },
             "data_quality": {
+                "demo_data": self.repository.get_setting("demo_mode") == "true",
+                "demo_scenario": self.repository.get_setting("demo_scenario") == "true",
                 "activity_monitoring_enabled": activity_enabled,
                 "covered_minutes_estimate": round(
                     (active_seconds + idle_seconds + unknown_seconds) / 60, 1
@@ -193,13 +195,18 @@ class TemplateNarrator:
         assert isinstance(tasks, Mapping)
         assert isinstance(reminders, Mapping)
         lines = [
-            f"# DeskCare {'日报' if period['type'] == 'daily' else '周报'}",
+            f"# {'【演示数据】' if quality.get('demo_data') else ''}DeskCare {'日报' if period['type'] == 'daily' else '周报'}",
             "",
             f"时间范围：{period['start']} 至 {period['end']}（本地日期）",
             "生成方式：本地规则/模板；未调用在线模型，也未进行医学判断。",
             "",
-            "## 事实摘要",
         ]
+        if quality.get("demo_data"):
+            lines.extend([
+                "> 本报告中的任务、电脑活动、提醒和状态记录均为软件生成的虚构演示数据，不是本机真实记录，也不能用于判断健康状况或产品效果。",
+                "",
+            ])
+        lines.append("## 事实摘要")
         if quality["activity_monitoring_enabled"] and quality["covered_minutes_estimate"] > 0:
             lines.extend(
                 [
@@ -250,7 +257,7 @@ class TemplateNarrator:
 
         lines.extend(["", "## 今天的状态记录"])
         if wellness is None:
-            lines.append("- 未开启状态打卡，因此不提供身体状态总结。")
+            lines.append("- 你未开启状态打卡，因此本报告不包含个人状态记录。")
         elif wellness["recorded_days"] == 0:
             lines.append("- 已开启状态打卡，但本期间没有主动记录。")
         else:

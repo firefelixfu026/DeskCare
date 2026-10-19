@@ -6,7 +6,7 @@ import json
 import os
 import re
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
@@ -39,6 +39,7 @@ class ReminderEvent:
     active_minutes: float
     response: str | None = None
     response_at: datetime | None = None
+    decision_context: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,27 @@ def get_default_database_path() -> Path:
     local_app_data = os.environ.get("LOCALAPPDATA")
     root = Path(local_app_data) if local_app_data else Path.home() / ".local" / "share"
     return root / "DeskCare" / "deskcare.sqlite3"
+
+
+def get_demo_database_path() -> Path:
+    """Return an isolated database for synthetic demo data.
+
+    Demo runs may persist their simulated observations, but they must never
+    share the user's everyday activity history or reports.
+    """
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    root = Path(local_app_data) if local_app_data else Path.home() / ".local" / "share"
+    return root / "DeskCare" / "demo" / "deskcare-demo.sqlite3"
+
+
+def get_demo_scenario_database_path(day: date | None = None) -> Path:
+    """Return an isolated, per-day database for the scripted demo journey."""
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    root = Path(local_app_data) if local_app_data else Path.home() / ".local" / "share"
+    scenario_day = day or date.today()
+    return root / "DeskCare" / "demo" / f"scenario-{scenario_day.isoformat()}.sqlite3"
 
 
 class UsageRepository:
@@ -187,6 +209,14 @@ class UsageRepository:
                         ON app_usage_daily(day);
                     INSERT INTO schema_migrations(version, applied_at)
                     VALUES (6, datetime('now'));
+                    """
+                )
+            if 7 not in applied:
+                connection.executescript(
+                    """ALTER TABLE reminder_events
+                        ADD COLUMN decision_context_json TEXT NOT NULL DEFAULT '{}';
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (7, datetime('now'));
                     """
                 )
 
@@ -609,6 +639,7 @@ class UsageRepository:
                 if row["response_at"]
                 else None
             ),
+            decision_context=json.loads(row["decision_context_json"] or "{}"),
         )
 
     def add_reminder_event(
@@ -618,26 +649,32 @@ class UsageRepository:
         decision: PolicyDecision,
         mode: str,
         active_minutes: float,
+        decision_context: dict[str, object] | None = None,
     ) -> ReminderEvent:
         if active_minutes < 0:
             raise ValueError("active minutes must not be negative")
+        context_json = json.dumps(
+            decision_context or {}, ensure_ascii=False, allow_nan=False
+        )
         with self._connect() as connection:
             cursor = connection.execute(
                 """INSERT INTO reminder_events(
                        occurred_at, decision, reason_codes_json,
-                       mode, active_minutes
-                   ) VALUES (?, ?, ?, ?, ?)""",
+                       mode, active_minutes, decision_context_json
+                   ) VALUES (?, ?, ?, ?, ?, ?)""",
                 (
                     occurred_at.isoformat(timespec="seconds"),
                     decision.action.value,
                     json.dumps(list(decision.reason_codes), ensure_ascii=False),
                     mode,
                     float(active_minutes),
+                    context_json,
                 ),
             )
             row = connection.execute(
                 """SELECT id, occurred_at, decision, reason_codes_json,
-                          mode, active_minutes, response, response_at
+                          mode, active_minutes, response, response_at,
+                          decision_context_json
                    FROM reminder_events WHERE id = ?""",
                 (cursor.lastrowid,),
             ).fetchone()
@@ -647,7 +684,8 @@ class UsageRepository:
         with self._connect() as connection:
             row = connection.execute(
                 """SELECT id, occurred_at, decision, reason_codes_json,
-                          mode, active_minutes, response, response_at
+                          mode, active_minutes, response, response_at,
+                          decision_context_json
                    FROM reminder_events ORDER BY id DESC LIMIT 1"""
             ).fetchone()
         return self._reminder_from_row(row) if row else None
@@ -665,7 +703,8 @@ class UsageRepository:
             )
             row = connection.execute(
                 """SELECT id, occurred_at, decision, reason_codes_json,
-                          mode, active_minutes, response, response_at
+                          mode, active_minutes, response, response_at,
+                          decision_context_json
                    FROM reminder_events WHERE id = ?""",
                 (event_id,),
             ).fetchone()
@@ -678,7 +717,8 @@ class UsageRepository:
         with self._connect() as connection:
             rows = connection.execute(
                 """SELECT id, occurred_at, decision, reason_codes_json,
-                          mode, active_minutes, response, response_at
+                          mode, active_minutes, response, response_at,
+                          decision_context_json
                    FROM reminder_events WHERE substr(occurred_at, 1, 10) = ?
                    ORDER BY id""",
                 (day_text,),
@@ -697,7 +737,8 @@ class UsageRepository:
         with self._connect() as connection:
             rows = connection.execute(
                 f"""SELECT id, occurred_at, decision, reason_codes_json,
-                           mode, active_minutes, response, response_at
+                           mode, active_minutes, response, response_at,
+                           decision_context_json
                     FROM reminder_events {response_filter}
                     ORDER BY id DESC LIMIT ?""",
                 (int(limit),),

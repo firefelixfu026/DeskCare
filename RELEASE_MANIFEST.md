@@ -1,6 +1,43 @@
 # DeskCare Windows 发布清单
 
-生成日期：2026-10-18（Asia/Shanghai）
+生成日期：2026-10-19（Asia/Shanghai）
+
+## M18r1 当前推荐版本（报告措辞修正、语音错误回归）
+
+| 文件 | 用途 | 大小 | SHA-256 |
+| --- | --- | ---: | --- |
+| `release/DeskCare-M18r1-windows-x64-portable.zip` | 推荐便携版；完整解压后运行 `DeskCare-M18r1/DeskCare-M18r1.exe` | 78,269,366 bytes | `0DB83FBE6603EE2B3EF9FBC716B8107F0A5DCACDB0F01DD91CAB0BF3814D0B99` |
+| `release/DeskCare-M18r1-windows-x64-onefile.zip` | 单文件备选版 | 75,536,102 bytes | `54E64D74785273757217E4C1717989AAFFC630149D96590EF52FACC50CA301D7` |
+
+### M18r1 构建与验收
+
+- Windows 11，Python 3.12.7，PyInstaller 6.22.3；包含可选 Vosk runtime，不含语音模型。
+- 构建前当前源码完整回归为 **114 passed, 1 skipped**；跳过项是沙箱禁止的本机 socket 探测。
+- 新包将“未开启状态打卡”提示改为“你未开启状态打卡，因此本报告不包含个人状态记录”；录音中途设备错误也有模拟自动化回归。
+- 两个 ZIP 的全部条目均已读取；包内 EXE SHA-256 与对应 dist 构建产物一致；未发现用户数据库或语音模型文件。
+- 只读检查 PyInstaller CArchive/PYZ 内容，确认 onedir 和 onefile 都嵌入新报告提示，且未嵌入旧措辞；未启动 EXE。
+- 对 ZIP 文件名及文本说明做凭据格式启发式扫描，未发现 `.env`、SQLite 用户库、Vosk/ONNX 模型、明显格式 API/AWS 凭据或私钥头。该检查不分析 EXE 内部二进制，不构成完整安全审计。
+- **M18r1 EXE 尚未启动验收**；未启动 GUI、未访问麦克风。该校验只证明归档和构建文件一致，不证明 Windows 实际启动成功。目标机启动、托盘、麦克风、DPI/多屏及普通用户走查仍待验收。
+
+## M18（此前版本，保留供追溯）
+
+| 文件 | 用途 | 大小 | SHA-256 |
+| --- | --- | ---: | --- |
+| `release/DeskCare-M18-windows-x64-portable.zip` | 推荐便携版；完整解压后运行 `DeskCare-M18/DeskCare-M18.exe` | 78,286,446 bytes | `0B94689B066AE09EDC331F0962288520240C259B35EA2ACDDD628D49AA24AD25` |
+| `release/DeskCare-M18-windows-x64-onefile.zip` | 单文件备选版 | 75,537,076 bytes | `441F8680E64AF76C32F6D8030469C329C44A2F2668DE10455041CC6CE905B202` |
+
+## M18 构建与验收
+
+- Windows 11，Python 3.12.7，PyInstaller 6.22.3；包含可选 Vosk runtime，不含模型文件。
+- 这两个 ZIP 对应构建时的完整自动化回归：**113 passed, 1 skipped（114 项）**；`compileall`、`pip check` 通过。跳过项是沙箱禁止的本机 socket 探测。
+- 2026-10-19 语音 worker 生命周期修复后，onedir 与 onefile 均用 Python 3.12.7 / PyInstaller 6.22.3 重建成功；新 ZIP 全量读取校验通过，包内 EXE 与新构建产物 SHA-256 一致。**这次最新 EXE 未启动验收**，旧构建启动记录不适用于新二进制。
+- M18 增加模拟数据库隔离、提醒依据最小留痕、SQLite v7 兼容迁移、端到端一致性、导入表格空单元格保护、提醒卡字段回归和失败提示。
+- 新增完整 `--demo-scenario` 虚构闭环；主窗口和报告都明确标注演示内容，空白演示库、场景演示库和正式用户库隔离；新构建 ZIP 与 SHA-256 已更新。
+- 交付文档复核后修正了源码与发布包的 Vosk 依赖说明；语音生命周期重建后，运行说明明确提示最新包尚未启动验收，ZIP 与 SHA 清单已更新。
+- 便携版原有展开目录在本轮同步新构建时遇到 DLL 文件占用，可能部分混合；没有关闭占用程序。不要从该旧展开目录重启；请将最新便携 ZIP 解压到新目录。此限制不影响已独立验证的两个 ZIP。
+- 对源码/文档及 M18 包完成凭据格式启发式扫描，未发现 API token、AWS access key 或密钥赋值；Qt TLS 二进制中的 PEM 标记为格式支持字符串，未匹配到私钥内容。此检查不是完整二进制安全审计。
+- 实际麦克风/模型、云端服务、普通用户走查、多屏/DPI、未签名 SmartScreen、干净第二台电脑均未验收；详情见 `docs/M15-M18_阶段验收与Windows实机清单.md`。
+- 2026-10-19 构建后，当前源码增加麦克风错误回归并改进报告措辞；此前 M18 ZIP 未包含这些变更。后续已另行构建 M18r1，见本清单顶部；M18 旧 ZIP 保留不覆盖。
 
 ## M14 Final 当前推荐版本（含圆形贴边伙伴与紧凑设置布局）
 

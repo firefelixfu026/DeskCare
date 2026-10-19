@@ -2,6 +2,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Executable,
     [int]$StartupSeconds = 20,
+    [ValidateSet("--demo", "--demo-scenario")]
+    [string]$DemoArgument = "--demo",
     [string]$TemporaryRoot = ([IO.Path]::GetTempPath())
 )
 
@@ -46,7 +48,7 @@ $startedProcesses = @()
 try {
     # Keep the smoke run separate from the user's real DeskCare database.
     $env:LOCALAPPDATA = $smokeData
-    Start-Process -FilePath $executablePath -ArgumentList "--demo" | Out-Null
+    Start-Process -FilePath $executablePath -ArgumentList $DemoArgument | Out-Null
     Start-Sleep -Seconds $StartupSeconds
 
     $startedProcesses = @(Get-Process -Name $processName -ErrorAction SilentlyContinue |

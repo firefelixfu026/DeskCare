@@ -145,6 +145,7 @@ class CompanionWindow(QWidget):
         self._audio_max_bytes = 0
         self._audio_buffer = bytearray()
         self._voice_thread = None
+        self._voice_worker = None
         self.setObjectName("deskcareCompanion")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowTitle("DeskCare 桌面伙伴")
@@ -470,8 +471,9 @@ class CompanionWindow(QWidget):
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: setattr(self, "_voice_thread", None))
         self._voice_thread = thread
+        self._voice_worker = worker
+        thread.finished.connect(self._on_voice_thread_finished)
         thread.start()
 
     def _on_transcribed(self, text: str, error: str):
@@ -483,6 +485,12 @@ class CompanionWindow(QWidget):
         else:
             self.transcript.setText(text)
             self.recording_hint.setText("这是待确认的文字草稿。检查无误后点击“确认并添加”才会保存。")
+
+    @Slot()
+    def _on_voice_thread_finished(self):
+        self._voice_thread = None
+        self._voice_worker = None
+        self.voice_button.setEnabled(True)
 
     def closeEvent(self, event):
         if self.isVisible():

@@ -71,6 +71,32 @@ def test_companion_quick_add_and_manual_transcript_confirmation(tmp_path):
     companion.close()
 
 
+def test_transcription_result_is_a_draft_until_user_confirms(tmp_path):
+    from deskcare.services.task_service import TaskService
+    from deskcare.storage.database import UsageRepository
+    from deskcare.ui.companion import CompanionWindow
+
+    _app()
+    repo = UsageRepository(tmp_path / "voice-draft.sqlite3")
+    tasks = TaskService(repo)
+    companion = CompanionWindow(tasks, repository=repo)
+
+    companion._on_transcribed("准备周会材料", "")
+    assert companion.transcript.text() == "准备周会材料"
+    assert tasks.list_today() == []
+    assert "草稿" in companion.recording_hint.text()
+
+    companion._confirm_transcript()
+    assert [task.title for task in tasks.list_today()] == ["准备周会材料"]
+    assert companion.transcript.text() == ""
+
+    companion.transcript.setText("")
+    companion._on_transcribed("", "麦克风暂不可用")
+    assert tasks.list_today()[0].title == "准备周会材料"
+    assert "没有识别成功" in companion.recording_hint.text()
+    companion.close()
+
+
 def test_companion_checking_task_updates_only_local_status(tmp_path):
     from deskcare.domain.types import TaskStatus
     from deskcare.services.task_service import TaskService
@@ -192,4 +218,215 @@ def test_companion_says_why_voice_input_is_not_ready_and_manual_add_still_works(
     companion.task_input.setText("我仍可手动添加")
     companion.add_task_button.click()
     assert [task.title for task in tasks.list_today()] == ["我仍可手动添加"]
+    companion.close()
+
+
+def test_press_record_release_transcribes_to_draft_before_task_confirmation(tmp_path, monkeypatch):
+    import deskcare.ui.companion as companion_module
+    from PySide6.QtCore import QThread
+    from PySide6.QtMultimedia import QAudioFormat
+    from deskcare.services.task_service import TaskService
+    from deskcare.storage.database import UsageRepository
+    from deskcare.ui.companion import CompanionWindow
+
+    app = _app()
+
+    class FakeSignal:
+        def connect(self, _callback):
+            pass
+
+    class FakeFormat:
+        def sampleRate(self):
+            return 16000
+
+        def channelCount(self):
+            return 1
+
+        def sampleFormat(self):
+            return QAudioFormat.SampleFormat.Int16
+
+        def bytesPerFrame(self):
+            return 2
+
+    class FakeInputDevice:
+        def isNull(self):
+            return False
+
+        def preferredFormat(self):
+            return FakeFormat()
+
+    class FakeIODevice:
+        def __init__(self):
+            self.buffer = b"\x01\x00" * 64
+
+        def bytesAvailable(self):
+            return len(self.buffer)
+
+        def read(self, size):
+            chunk, self.buffer = self.buffer[:size], self.buffer[size:]
+            return chunk
+
+    class FakeAudioSource:
+        def __init__(self, _device, _audio_format, _parent):
+            self.stateChanged = FakeSignal()
+            self.device = FakeIODevice()
+            self.stopped = False
+            self.deleted = False
+
+        def start(self):
+            return self.device
+
+        def stop(self):
+            self.stopped = True
+
+        def deleteLater(self):
+            self.deleted = True
+
+    monkeypatch.setattr(
+        companion_module.QMediaDevices,
+        "defaultAudioInput",
+        staticmethod(lambda: FakeInputDevice()),
+    )
+    monkeypatch.setattr(companion_module.importlib.util, "find_spec", lambda _name: object())
+    monkeypatch.setattr(companion_module, "QAudioSource", FakeAudioSource)
+    transcription_calls = []
+
+    def transcribe(_model, pcm, sample_rate=16000):
+        transcription_calls.append((len(pcm), sample_rate))
+        return "语音生成的任务草稿" if pcm and sample_rate == 16000 else ""
+
+    monkeypatch.setattr(companion_module, "transcribe_pcm", transcribe)
+
+    repository = UsageRepository(tmp_path / "voice-lifecycle.sqlite3")
+    tasks = TaskService(repository)
+    companion = CompanionWindow(tasks, repository=repository)
+    companion.model_path = str(tmp_path)
+
+    companion._start_recording()
+    source = companion._audio_source
+    assert source is not None
+    assert companion._audio_timer.isActive()
+    assert "正在录音" in companion.recording_hint.text()
+
+    companion._read_audio()
+    assert companion._audio_buffer
+    companion._stop_recording()
+
+    worker_thread = companion._voice_thread
+    assert companion._voice_worker is not None
+    assert worker_thread is not None
+    for _ in range(600):
+        app.processEvents()
+        if companion._voice_thread is None and companion.transcript.text():
+            break
+        QThread.msleep(5)
+    app.processEvents()
+    assert companion._voice_thread is None, f"voice thread did not finish: {companion.recording_hint.text()}"
+    assert companion._voice_worker is None
+
+    assert source.stopped and source.deleted
+    assert not companion._audio_buffer
+    assert companion._audio_source is None
+    assert companion._audio_device is None
+    assert transcription_calls == [(128, 16000)], companion.recording_hint.text()
+    assert companion.transcript.text() == "语音生成的任务草稿"
+    assert tasks.list_today() == []
+
+    companion._confirm_transcript()
+    assert [task.title for task in tasks.list_today()] == ["语音生成的任务草稿"]
+    companion.close()
+
+
+def test_microphone_error_discards_buffer_and_does_not_create_task(tmp_path, monkeypatch):
+    import deskcare.ui.companion as companion_module
+    from PySide6.QtMultimedia import QAudioFormat
+    from deskcare.services.task_service import TaskService
+    from deskcare.storage.database import UsageRepository
+    from deskcare.ui.companion import CompanionWindow
+
+    _app()
+
+    class FakeFormat:
+        def sampleRate(self):
+            return 16000
+
+        def channelCount(self):
+            return 1
+
+        def sampleFormat(self):
+            return QAudioFormat.SampleFormat.Int16
+
+        def bytesPerFrame(self):
+            return 2
+
+    class FakeInputDevice:
+        def isNull(self):
+            return False
+
+        def preferredFormat(self):
+            return FakeFormat()
+
+    class FakeIODevice:
+        def bytesAvailable(self):
+            return 0
+
+        def read(self, _size):
+            return b""
+
+    class FakeSignal:
+        def connect(self, _callback):
+            pass
+
+    class FakeAudioSource:
+        class Error:
+            NoError = 0
+            OpenError = 1
+
+        def __init__(self, _device, _audio_format, _parent):
+            self.stateChanged = FakeSignal()
+            self.device = FakeIODevice()
+            self.stopped = False
+            self.deleted = False
+
+        def start(self):
+            return self.device
+
+        def error(self):
+            return self.Error.OpenError
+
+        def stop(self):
+            self.stopped = True
+
+        def deleteLater(self):
+            self.deleted = True
+
+    monkeypatch.setattr(
+        companion_module.QMediaDevices,
+        "defaultAudioInput",
+        staticmethod(lambda: FakeInputDevice()),
+    )
+    monkeypatch.setattr(companion_module.importlib.util, "find_spec", lambda _name: object())
+    monkeypatch.setattr(companion_module, "QAudioSource", FakeAudioSource)
+
+    repository = UsageRepository(tmp_path / "voice-device-error.sqlite3")
+    tasks = TaskService(repository)
+    companion = CompanionWindow(tasks, repository=repository)
+    companion.model_path = str(tmp_path)
+    companion._start_recording()
+    source = companion._audio_source
+    assert source is not None
+    assert companion._audio_timer.isActive()
+
+    companion._audio_buffer.extend(b"private audio bytes")
+    companion._audio_state_changed(None)
+
+    assert source.stopped and source.deleted
+    assert companion._audio_source is None
+    assert companion._audio_device is None
+    assert companion._audio_format is None
+    assert not companion._audio_buffer
+    assert not companion._audio_timer.isActive()
+    assert companion.voice_button.isEnabled()
+    assert "没有任务被修改" in companion.recording_hint.text()
+    assert tasks.list_today() == []
     companion.close()
