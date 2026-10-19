@@ -98,6 +98,6 @@
 ## 2026-10-19 补充：M15–M18 继续审计与离屏回归
 
 - 复核 M15–M18 实机验收清单和核心产品/技术/隐私要求，确认真实托盘、麦克风、DPI/多屏和普通用户可理解度仍需实机/真人验证，不能用自动化测试宣称通过。
-- 在 Qt offscreen 模式执行完整 pytest：`python -m pytest -q -p no:cacheprovider --basetemp .pytest-current-audit-20261019`，退出码 0；收集 115 项，1 项跳过，其余通过。跳过为本机 AI localhost socket 探测在当前沙箱不可用。
+- 设置 `$env:QT_QPA_PLATFORM='offscreen'` 并执行 `& .\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp .pytest-current-audit-20261019`，退出码 0；收集 115 项，1 项跳过，其余通过。跳过为本机 AI localhost socket 探测在当前沙箱不可用。
 - 首次测试尝试因当前会话无项目目录写权限而无法创建 pytest 临时目录；获得项目目录权限后重跑通过。没有启动应用窗口、操作用户桌面或调用真实麦克风。
 - 本次只增加审计/测试记录，没有修改产品代码。实机验收与 GitHub 连接恢复后的远端核验仍是下一步。

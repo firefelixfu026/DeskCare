@@ -603,6 +603,6 @@
 ### 2026-10-19 补充：M15–M18 继续审计与离屏回归
 
 - 重新阅读交接说明、PRD、技术架构/数据契约、AI/决策规范、里程碑验收、隐私伦理、M15–M18 Windows 清单及产品定位文档；确认真实 Windows GUI、麦克风、多屏/DPI 和非开发者走查仍是人工验收项，不能由离屏测试替代。
-- 设置 `QT_QPA_PLATFORM=offscreen` 后运行 `python -m pytest -q -p no:cacheprovider --basetemp .pytest-current-audit-20261019`：退出码 0，115 项收集，测试进度 100%，其中 1 项跳过、其余通过。唯一跳过项仍是沙箱不可用的 localhost AI socket 探测；没有启动 DeskCare GUI，也未使用麦克风或操作可见桌面。
+- 设置 `$env:QT_QPA_PLATFORM='offscreen'` 后运行 `& .\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp .pytest-current-audit-20261019`：退出码 0，115 项收集，测试进度 100%，其中 1 项跳过、其余通过。唯一跳过项仍是沙箱不可用的 localhost AI socket 探测；没有启动 DeskCare GUI，也未使用麦克风或操作可见桌面。
 - 首次运行因当前会话没有项目目录写权限，在创建 pytest 临时目录时失败，未进入测试断言；获得项目目录权限后在隔离 basetemp 重跑成功。该首次失败是环境权限错误，不计为产品测试失败。
 - 本轮无产品代码或功能范围变更；目标机人工验收和 GitHub 远端同步状态仍未解决。下一步应在用户方便时完成 Windows 实机清单；网络恢复后先查询 GitHub 远端，再同步本地提交。
