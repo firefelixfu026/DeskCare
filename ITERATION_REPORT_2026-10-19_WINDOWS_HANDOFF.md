@@ -90,6 +90,7 @@
 
 ## 2026-10-19 补充：GitHub 同步边界
 
-- 只读确认远程 `origin` 是 `https://github.com/firefelixfu026/DeskCare.git`；远端 `main` 当前查询结果为 `3b39283`，与本地基线提交一致。
-- 当前源代码/测试/文档改动仍在本地工作树；release 目录因 `.gitignore` 被排除，不会进入源码提交。凭据格式启发式扫描未发现明显 API/AWS token。
-- 提交准备时，Git 因 `.git/index.lock` 写入权限被拒而未能暂存任何文件；检查确认无暂存内容、无残留锁、未提交或推送。需在允许写 `.git` 的工作副本完成同步。
+- `origin` 为用户指定的 `https://github.com/firefelixfu026/DeskCare.git`。M15–M18 源码、测试和文档已经创建本地提交 `7fd70db`（`Prepare M15-M18 product handoff`）；发布包位于被 `.gitignore` 排除的 `release/`，不在该源码提交中。
+- 已尝试正常推送 `main`，但连接被重置；随后查询远端的 `git ls-remote` 同样因无法连接 GitHub 443 失败。因此远端是否收到提交尚未确认；网络恢复后应先查询远端，再决定是否推送，当前不能声称已同步。
+- 凭据格式启发式扫描未发现明显 API/AWS token；扫描范围不包括 EXE 内部二进制，不能代替完整安全审计。
+- 本轮继续遵守用户“暂时不要操控电脑”的要求：没有启动桌面 GUI、使用麦克风或操作可见窗口。M18r1 实机启动与普通用户验收仍待用户方便时完成。

@@ -595,7 +595,7 @@
 
 ### 2026-10-19 补充：GitHub 源码交接状态
 
-- 只读确认 `origin` 为用户指定的 `https://github.com/firefelixfu026/DeskCare.git`；本地 `main` 与远端当前查询到的 `origin/main` 基线提交均为 `3b39283`。
-- M15–M18 源码/测试/文档改动仍留在本地工作树（21 个已跟踪文件修改，另有新报告、验收文档和演示测试未跟踪）。凭据格式扫描未发现明显 API/AWS token；M18r1 ZIP/EXE 受 `.gitignore` 的 `release/` 规则排除。
-- Git 暂存失败，因为系统拒绝创建 `.git/index.lock`（仓库元数据只读）；确认没有 staged 内容、残留锁文件或远程提交。未提交、未推送；不要声称 GitHub 已同步。
-- 后续需在允许写入 `.git` 的仓库副本完成提交/同步；此次限制不影响本地 M18r1 交付物和自动化测试。
+- `origin` 指向用户指定的 `https://github.com/firefelixfu026/DeskCare.git`。本地 `main` 已创建提交 `7fd70db`（`Prepare M15-M18 product handoff`），包含 M15–M18 源码、测试和交接文档；M18r1 ZIP/EXE 受 `.gitignore` 的 `release/` 规则排除。
+- 已尝试正常推送 `main`，但 HTTPS 连接在 GitHub 处被重置；随后 `git ls-remote` 也因无法连接 GitHub 443 失败。因此远端是否收到该提交目前无法确认，不能声称 GitHub 已同步。网络恢复后需先查询远端，再决定是否推送。
+- 推送前凭据格式扫描未发现明显 API/AWS token；该扫描仅覆盖源码和文本文档，不是完整二进制安全审计。
+- M18r1 本地发布包和自动化测试不受推送失败影响；目标 Windows 实机启动、托盘、麦克风、DPI/多屏及普通用户验收仍待用户方便时完成。本轮未启动 GUI，也未操作用户电脑。
