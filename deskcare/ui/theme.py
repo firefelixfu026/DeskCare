@@ -58,12 +58,7 @@ QTableWidget#todayTasks { outline: none; }
 QTableWidget#todayTasks::item { padding: 0 10px; border-bottom: 1px solid #F0F4F2; }
 QTableWidget#todayTasks::item:selected { background: #EDF5F0; color: #294540; }
 QTableWidget#todayTasks QHeaderView::section { background: #FFFFFF; color: #7C8D86; padding: 12px 10px; font-size: 12px; }
-QComboBox#taskStatus { margin: 11px 10px; padding: 3px 8px; padding-right: 24px; min-height: 18px; border: 1px solid transparent; border-radius: 8px; background: #F0F3F2; color: #687D75; }
-QComboBox#taskStatus[tone="doing"] { background: #FFF3DC; color: #906821; }
-QComboBox#taskStatus[tone="done"] { background: #E5F2EB; color: #32735D; }
-QComboBox#taskStatus:hover, QComboBox#taskStatus:focus { border-color: #9DBBAE; }
-QComboBox#taskStatus::drop-down { width: 22px; }
-QComboBox#taskStatus::down-arrow { width: 11px; height: 11px; }
+QComboBox#taskStatus { margin: 0; padding: 0; min-height: 0; border: none; background: transparent; }
 QTextEdit, QTextBrowser { background: #FFFFFF; border: none; border-radius: 8px; padding: 10px; selection-background-color: #D5E8DE; }
 QTabWidget::pane { border: none; padding-top: 14px; }
 QTabBar::tab { background: transparent; color: #71857C; padding: 9px 17px; border-bottom: 2px solid transparent; margin-right: 8px; }

@@ -40,6 +40,7 @@ from deskcare.services.reminder_service import (
 )
 from deskcare.services.report_engine import LocalReportService, ReportPeriod
 from deskcare.ui.task_dialog import ImportPreviewDialog, TaskFormDialog
+from deskcare.ui.task_status import TaskStatusCombo
 from deskcare.ui.charts import UsageChart
 from deskcare.ui.report_preview import ReportPreview
 
@@ -322,7 +323,7 @@ class TodayPage(QWidget):
         self.empty_state.setVisible(not self._tasks)
         for row, task in enumerate(self._tasks):
             self.task_table.insertRow(row)
-            status = QComboBox()
+            status = TaskStatusCombo()
             status.setObjectName("taskStatus")
             status.setProperty("tone", task.status.value)
             status.setAccessibleName(f"任务状态：{task.title}")
@@ -353,6 +354,8 @@ class TodayPage(QWidget):
 
     def _set_status(self, task_id: int, status: TaskStatus) -> None:
         if self.task_service is not None:
+            # Qt's item model can return a str for a str-backed enum.
+            status = TaskStatus(status)
             # Keep edit/delete targeting the task whose pill was just changed,
             # even though the synchronous service notification rebuilds rows.
             for row, task in enumerate(self._tasks):

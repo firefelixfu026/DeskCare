@@ -75,6 +75,13 @@ def main():
             app.processEvents()
             if not window.grab().save(str(args.output / f"{name}.png")):
                 raise RuntimeError("Could not write preview")
+        window.navigation.setCurrentRow(0)
+        status_control = window.today_page.task_table.cellWidget(0, 0)
+        status_control.showPopup()
+        app.processEvents()
+        status_control.menu.grab().save(str(args.output / "task-status-menu.png"))
+        status_control.grab().save(str(args.output / "task-status-badge.png"))
+        status_control.hidePopup()
         task_dialog = TaskFormDialog(window)
         task_dialog.show()
         app.processEvents()
@@ -106,7 +113,7 @@ def main():
         window._allow_close = True
         window.close()
         gc.collect()
-    print(f"Rendered sixteen fictional-data previews to {args.output}")
+    print(f"Rendered eighteen fictional-data previews to {args.output}")
 
 
 if __name__ == "__main__":
