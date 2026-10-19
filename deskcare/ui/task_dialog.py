@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date, datetime
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
 from PySide6.QtWidgets import (
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from deskcare.domain.types import Task, TaskDraft
 from deskcare.importers.base import ImportResult, duplicate_issues, validate_title
+from deskcare.ui.theme import STYLE
 
 
 class _TaskAIWorker(QObject):
@@ -60,18 +61,19 @@ def _parse_due(value: str) -> tuple[datetime | None, str | None]:
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00")), None
     except ValueError:
-        return None, "截止时间需使用 ISO 格式，例如 2026-10-14T18:00，或留空。"
+        return None, f"请输入日期和时间，例如 {date.today():%Y-%m-%d} 18:00，或留空。"
 
 
 class TaskFormDialog(QDialog):
     def __init__(self, parent=None, task: Task | None = None) -> None:
         super().__init__(parent)
+        self.setStyleSheet(STYLE)
         self.setWindowTitle("编辑任务" if task else "添加任务")
         self.setMinimumWidth(460)
         self.title_edit = QLineEdit(task.title if task else "")
         self.title_edit.setPlaceholderText("例如：完成编程练习")
         self.due_edit = QLineEdit(task.due_at.isoformat(timespec="minutes") if task and task.due_at else "")
-        self.due_edit.setPlaceholderText("可选：2026-10-14T18:00")
+        self.due_edit.setPlaceholderText(f"可选：{date.today():%Y-%m-%d} 18:00")
         self.estimate = QSpinBox()
         self.estimate.setRange(0, 1440)
         self.estimate.setSpecialValueText("未设置")
@@ -84,9 +86,14 @@ class TaskFormDialog(QDialog):
         self.error.setWordWrap(True)
         self.error.setStyleSheet("color: #B44A42;")
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("保存" if task else "添加")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setObjectName("secondaryButton")
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
         root = QVBoxLayout(self)
+        root.setContentsMargins(24, 24, 24, 20)
+        root.setSpacing(18)
         root.addLayout(form)
         root.addWidget(self.error)
         root.addWidget(buttons)
@@ -113,6 +120,7 @@ class ImportPreviewDialog(QDialog):
                  cloud_request_factory: Callable[[], object] | None = None,
                  cloud_parser: Callable[[object], ImportResult] | None = None) -> None:
         super().__init__(parent)
+        self.setStyleSheet(STYLE)
         self.import_result = result
         self._ai_parser = ai_parser
         self._cloud_request_factory = cloud_request_factory

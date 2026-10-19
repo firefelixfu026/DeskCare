@@ -1,8 +1,21 @@
 # DeskCare Windows 发布清单
 
-生成日期：2026-10-19（Asia/Shanghai）
+生成日期：2026-10-20（Asia/Shanghai）
 
-## UI1 当前界面体验版本
+## UI2 当前体验版本
+
+| 文件 | 用途 | 大小 | SHA-256 |
+| --- | --- | ---: | --- |
+| `release/DeskCare-UI2-windows-x64-portable.zip` | 完整解压后进入 `DeskCare-UI2`，运行 `DeskCare-UI2.exe` | 50,028,228 bytes | `4BF85D3521749396B4F25B00B62427AA155E3743C6F922C59E2887F3A80C9550` |
+
+- Windows 11 / Python 3.12.7 / PyInstaller 6.22.3 onedir；应用版本 `2.0.0-ui2`。旧版和旧 onefile 不覆盖。
+- 统一浅色弹窗及无原生黑框的 SVG 控件箭头；图表从当前帧和坐标轴连续插值；状态页近七天自主记录；精简桌面伙伴，移除内置语音、Vosk 和 QtMultimedia。
+- 全量 **121 passed, 1 skipped**（39.85 秒，受限环境 localhost socket）；150% 离屏 UI 回归 **32 passed**；两种尺寸虚构数据预览检查；同名应用时长合并回归通过。
+- ZIP 全部 **179** 条目 CRC 通过；EXE 与 dist、箭头 SVG 与源码一致；EXE 内七个修改的应用/UI 模块代码指纹与最终源码一致。无嵌入语音模块，ZIP 名称检查没有用户数据库、`.env` 或 ONNX 模型，不代表完整安全审计。
+- 包内附 UI2 使用说明、迭代报告和故障指南。SHA 文件为 `release/DeskCare-UI2-SHA256.txt`。
+- **未启动 UI2 EXE**，没有操作用户桌面或托盘。真实启动、多屏/DPI、系统主题及干净第二台 Windows 待验收。只读签名检查为 `NotSigned`，不提供签名安装器。
+
+## UI1 此前界面体验版本
 
 | 文件 | 用途 | 大小 | SHA-256 |
 | --- | --- | ---: | --- |

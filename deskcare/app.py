@@ -28,6 +28,7 @@ from deskcare.storage.database import (
 from deskcare.runtime import SingleInstanceGuard
 from deskcare.ui.main_window import MainWindow
 from deskcare.ui.tray import TrayController
+from deskcare.ui.theme import apply_theme
 
 
 def _build_provider(demo_requested: bool, *, include_app_name: bool = False):
@@ -45,8 +46,9 @@ def create_application(argv: list[str] | None = None):
     demo_mode = demo_requested or demo_scenario_requested or os.name != "nt"
     qt_argv = [item for item in raw_argv if item not in {"--demo", "--demo-scenario"}] or ["deskcare"]
     qt_app = QApplication.instance() or QApplication(qt_argv)
+    apply_theme(qt_app)
     qt_app.setApplicationName("DeskCare")
-    qt_app.setApplicationVersion("2.0.0-ui1")
+    qt_app.setApplicationVersion("2.0.0-ui2")
     instance_guard = SingleInstanceGuard(parent=qt_app)
     if not instance_guard.primary:
         return qt_app, None, None

@@ -24,6 +24,8 @@ from deskcare.services.report_engine import LocalReportService
 from deskcare.services.task_service import TaskService
 from deskcare.storage.database import UsageRepository
 from deskcare.ui.main_window import MainWindow
+from deskcare.ui.task_dialog import TaskFormDialog
+from deskcare.domain.types import WellnessLevel
 
 
 def main():
@@ -39,6 +41,8 @@ def main():
     with TemporaryDirectory(prefix="deskcare-preview-", dir=args.output.resolve()) as temporary:
         repository = UsageRepository(Path(temporary) / "preview.sqlite3")
         prepare_demo_scenario(repository)
+        for offset, level in ((0, WellnessLevel.COMFORTABLE), (2, WellnessLevel.COMFORTABLE)):
+            repository.upsert_wellness_entry(date.today() - timedelta(days=offset), level)
         repository.set_consent("app_name_stats", True)
         for offset, minutes in enumerate((135, 95, 182, 150, 75, 120, 42)):
             repository.add_usage(date.today() - timedelta(days=offset), "CODE", active_seconds=minutes * 60)
@@ -69,10 +73,19 @@ def main():
             app.processEvents()
             if not window.grab().save(str(args.output / f"{name}.png")):
                 raise RuntimeError("Could not write preview")
+        task_dialog = TaskFormDialog(window)
+        task_dialog.show()
+        app.processEvents()
+        task_dialog.grab().save(str(args.output / "task-dialog.png"))
+        task_dialog.close()
+        window.companion.show()
+        app.processEvents()
+        window.companion.grab().save(str(args.output / "companion.png"))
+        window.companion.hide()
         window._allow_close = True
         window.close()
         gc.collect()
-    print(f"Rendered seven fictional-data previews to {args.output}")
+    print(f"Rendered nine fictional-data previews to {args.output}")
 
 
 if __name__ == "__main__":

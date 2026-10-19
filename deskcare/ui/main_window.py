@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 from deskcare.ui.pages import ReportsPage, SettingsPage, TodayPage, UsagePage
 from deskcare.ui.companion import CompanionWindow
 from deskcare.ui.tray import build_tray_icon
-from deskcare.ui.theme import STYLE
+from deskcare.ui.theme import STYLE, apply_theme
 from deskcare.ui.icons import navigation_icon
 
 
@@ -76,9 +76,6 @@ class MainWindow(QMainWindow):
         brand = QLabel("DeskCare")
         brand.setObjectName("brand")
         sidebar_layout.addWidget(brand)
-        tagline = QLabel("陪你把一天过得更清楚")
-        tagline.setObjectName("tagline")
-        sidebar_layout.addWidget(tagline)
         sidebar_layout.addSpacing(18)
 
         self.navigation = QListWidget()
@@ -100,7 +97,7 @@ class MainWindow(QMainWindow):
         self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation, 1)
-        version = QLabel("记录留在本机 · 隐私由你掌控")
+        version = QLabel("DeskCare · UI2")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
@@ -154,6 +151,7 @@ class MainWindow(QMainWindow):
             self.local_ai_service,
         )
         self.reports_page.sections.tabBar().hide()
+        self.reports_page.open_settings_requested.connect(self._open_wellness_settings)
         self.pages.addWidget(self.reports_page)
         self.settings_page = SettingsPage(
             self.config_store,
@@ -196,6 +194,10 @@ class MainWindow(QMainWindow):
         else:
             self.companion.hide()
 
+    def _open_wellness_settings(self) -> None:
+        self.navigation.setCurrentRow(4)
+        self.settings_page.sections.setCurrentIndex(1)
+
     def _show_main_window(self) -> None:
         self.show()
         self.raise_()
@@ -207,7 +209,10 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentIndex((0, 1, 2, 2, 3)[index])
         if index in (2, 3):
             self.reports_page.sections.setCurrentIndex(index - 2)
-            self.reports_page.refresh_report()
+            if index == 2:
+                self.reports_page._sync_bodylog(bool(self.bodylog_service and self.bodylog_service.enabled))
+            else:
+                self.reports_page.refresh_report()
         self.header_title.setText(self.navigation.item(index).text().splitlines()[0])
 
     def _sync_header(self, enabled: bool, paused: bool) -> None:
@@ -231,6 +236,7 @@ class MainWindow(QMainWindow):
         self.settings_page.companion_enabled.setChecked(False)
 
     def _apply_style(self) -> None:
+        apply_theme(QApplication.instance())
         font = QFont()
         font.setFamilies(["Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Noto Sans CJK SC"])
         font.setPointSize(10)
@@ -251,7 +257,7 @@ class MainWindow(QMainWindow):
         try:
             companion = getattr(self, "companion", None)
             if companion is not None:
-                companion.stop_voice_input()
+                companion.hide()
             threads = [thread for thread in self.findChildren(QThread) if thread.isRunning()]
             # quit() is thread-safe and lets each event loop stop as soon as
             # its current bounded local request returns. Calling it before

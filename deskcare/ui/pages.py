@@ -116,7 +116,6 @@ class TodayPage(QWidget):
         self._tasks: list[Task] = []
         root = QVBoxLayout(self)
         root.setSpacing(16)
-        root.addWidget(label("把今天放在眼前，按自己的节奏推进。", "pageLead"))
 
         state_row = QHBoxLayout()
         self.monitoring_badge = label("电脑使用统计未开启", "statusBadge")
@@ -180,7 +179,6 @@ class TodayPage(QWidget):
         task_layout = QVBoxLayout(task_frame)
         task_layout.setContentsMargins(18, 15, 18, 15)
         task_layout.addWidget(label("今日任务", "cardTitle"))
-        task_layout.addWidget(label("任务只有在你确认后才会保存；完成状态也只能由你主动修改。", "cardBody"))
         self.task_table = QTableWidget(0, 4)
         self.task_table.setHorizontalHeaderLabels(["状态", "任务", "截止时间", "预计用时（分钟）"])
         self.task_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -402,7 +400,6 @@ class UsagePage(QWidget):
         scroll.setWidget(content)
         outer.addWidget(scroll)
         root.setSpacing(16)
-        root.addWidget(label("看看电脑大致用了多久。这里的时间是估算值，不代表工作质量。", "pageLead"))
         grid = QGridLayout()
         grid.setSpacing(12)
         active_frame, self.active_value = self._metric_card("今天活跃时间估计", "未开启统计", "#7D9FB3")
@@ -413,9 +410,11 @@ class UsagePage(QWidget):
         self.demo_banner = label("", "demoBanner")
         root.addWidget(self.demo_banner)
         self.session_value = label("", "cardBody")
-        root.addWidget(self.session_value)
+        self.session_value.hide()
         self.sections = QTabWidget()
-        root.addWidget(self.sections, 1)
+        self.sections.setMinimumHeight(350)
+        self.sections.setMaximumHeight(430)
+        root.addWidget(self.sections)
         overview = QWidget()
         overview_layout = QHBoxLayout(overview)
         overview_layout.setContentsMargins(0, 0, 0, 0)
@@ -444,7 +443,7 @@ class UsagePage(QWidget):
         app_scroll.setWidget(self.app_chart)
         app_layout.addWidget(app_scroll, 1)
         self.sections.addTab(app_frame, "应用排行")
-        root.addWidget(label("只展示经你授权的本地聚合记录 · 将鼠标移到图上可查看时间", "mutedText"))
+        root.addStretch()
         controller.subscribe(self._sync)
         if collector is not None:
             collector.subscribe(lambda _result: self._sync(controller.enabled, controller.paused))
@@ -546,6 +545,8 @@ class UsagePage(QWidget):
 
 
 class ReportsPage(QWidget):
+    open_settings_requested = Signal()
+
     def __init__(self, controller, repository=None, bodylog_service=None, report_service=None, local_ai_service=None, parent=None) -> None:
         super().__init__(parent)
         self.controller = controller
@@ -561,7 +562,6 @@ class ReportsPage(QWidget):
         self._ai_snapshot_visible = False
         root = QVBoxLayout(self)
         root.setSpacing(16)
-        root.addWidget(label("回顾最近的任务和电脑使用情况。记录只是参考，不是健康或效率评判。", "pageLead"))
         self.sections = QTabWidget()
         root.addWidget(self.sections, 1)
 
@@ -569,7 +569,10 @@ class ReportsPage(QWidget):
         bodylog_frame.setObjectName("card")
         bodylog_layout = QVBoxLayout(bodylog_frame)
         bodylog_layout.setContentsMargins(18, 15, 18, 15)
-        bodylog_layout.addWidget(label("今天的状态", "cardTitle"))
+        self.bodylog_date = label(date.today().strftime("今天 · %m月%d日"), "cardTitle")
+        bodylog_layout.addWidget(self.bodylog_date)
+        self.today_state_value = label("未记录", "wellnessSummary")
+        bodylog_layout.addWidget(self.today_state_value)
         self.bodylog_status = label("状态打卡默认关闭；需要单独授权。", "cardBody")
         bodylog_layout.addWidget(self.bodylog_status)
         bodylog_actions = QHBoxLayout()
@@ -581,17 +584,45 @@ class ReportsPage(QWidget):
         self.save_wellness.clicked.connect(self._save_wellness)
         bodylog_actions.addWidget(self.save_wellness)
         self.delete_wellness = QPushButton("删除今天记录")
+        self.delete_wellness.setObjectName("secondaryButton")
         self.delete_wellness.clicked.connect(self._delete_wellness)
         bodylog_actions.addWidget(self.delete_wellness)
         bodylog_actions.addStretch()
         bodylog_layout.addLayout(bodylog_actions)
-        bodylog_layout.addWidget(label("只记录你主动选择的简单状态，不是医学检查；你可以不记录，也可以随时删除。", "mutedText"))
+        self.enable_wellness = QPushButton("前往设置开启")
+        self.enable_wellness.clicked.connect(self.open_settings_requested.emit)
+        bodylog_layout.addWidget(self.enable_wellness, 0, Qt.AlignmentFlag.AlignLeft)
         status_page = QWidget()
+        status_page.setMaximumWidth(960)
         status_layout = QVBoxLayout(status_page)
         status_layout.setContentsMargins(0, 0, 0, 0)
         status_layout.addWidget(bodylog_frame)
+        history_card = QFrame()
+        history_card.setObjectName("card")
+        history_layout = QVBoxLayout(history_card)
+        history_layout.setContentsMargins(18, 16, 18, 16)
+        self.history_title = label("最近 7 天", "cardTitle")
+        history_layout.addWidget(self.history_title)
+        self.wellness_history = QTableWidget(0, 2)
+        self.wellness_history.setHorizontalHeaderLabels(["日期", "你记录的状态"])
+        self.wellness_history.verticalHeader().hide()
+        self.wellness_history.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.wellness_history.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.wellness_history.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.wellness_history.setShowGrid(False)
+        self.wellness_history.setFixedHeight(276)
+        history_layout.addWidget(self.wellness_history)
+        self.history_empty = label("开启状态打卡后，可在这里回看自己的记录。", "cardBody")
+        history_layout.addWidget(self.history_empty)
+        status_layout.addWidget(history_card)
         status_layout.addStretch()
-        self.sections.addTab(status_page, "我的状态")
+        status_scroll = QScrollArea()
+        status_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        status_scroll.setWidgetResizable(True)
+        status_scroll.setWidget(status_page)
+        status_scroll.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+        status_page.setObjectName("settingsContent")
+        self.sections.addTab(status_scroll, "我的状态")
 
         report_frame = QFrame()
         report_frame.setObjectName("card")
@@ -622,7 +653,6 @@ class ReportsPage(QWidget):
         self.report_text = ReportPreview()
         self.report_text.setMinimumHeight(260)
         report_layout.addWidget(self.report_text)
-        report_layout.addWidget(label("小结只使用 DeskCare 已记录的信息。缺少记录时会直接说明，不会猜测你的健康或工作效率。", "mutedText"))
         self.sections.addTab(report_frame, "日报与周报")
         self.sections.setCurrentIndex(1)
         if self.bodylog_service is not None:
@@ -640,21 +670,41 @@ class ReportsPage(QWidget):
             self.refresh_report()
 
     def _sync_bodylog(self, enabled: bool) -> None:
+        self.bodylog_date.setText(date.today().strftime("今天 · %m月%d日"))
         self.bodylog_status.setText(
-            "状态打卡已开启；只保存你今天主动选择的选项。"
+            "选择后保存，可随时修改。"
             if enabled
-            else "状态打卡默认关闭；需要时可在“设置与隐私”中开启。"
+            else "尚未开启状态打卡"
         )
+        self.enable_wellness.setVisible(not enabled)
         self.wellness_level.setEnabled(enabled)
         self.save_wellness.setEnabled(enabled)
         has_entry = self.bodylog_service is not None and self.bodylog_service.today_entry() is not None
         self.delete_wellness.setEnabled(enabled and has_entry)
         if enabled and self.bodylog_service is not None:
             entry = self.bodylog_service.today_entry()
+            self.today_state_value.setText(WELLNESS_LEVEL_LABELS[entry.comfort_level] if entry else "今天还没有记录")
             if entry is not None:
+                self.bodylog_status.setText("今天已保存")
                 index = self.wellness_level.findData(entry.comfort_level)
                 if index >= 0:
                     self.wellness_level.setCurrentIndex(index)
+            today = date.today()
+            entries = {entry.day: entry for entry in self.bodylog_service.repository.wellness_entries_for_period(today - timedelta(days=6), today)}
+            self.history_title.setText(f"最近 7 天 · 已记录 {len(entries)} 天")
+            self.wellness_history.setRowCount(7)
+            for row in range(7):
+                day = today - timedelta(days=row)
+                entry = entries.get(day)
+                self.wellness_history.setItem(row, 0, QTableWidgetItem(day.strftime("%m月%d日") + (" · 今天" if row == 0 else "")))
+                self.wellness_history.setItem(row, 1, QTableWidgetItem(WELLNESS_LEVEL_LABELS[entry.comfort_level] if entry else "—"))
+                self.wellness_history.setRowHeight(row, 33)
+        else:
+            self.today_state_value.setText("未开启")
+            self.wellness_history.setRowCount(0)
+            self.history_title.setText("最近 7 天")
+        self.wellness_history.setVisible(enabled)
+        self.history_empty.setVisible(not enabled)
         self.refresh_report()
 
     def _save_wellness(self) -> None:
@@ -662,7 +712,6 @@ class ReportsPage(QWidget):
             return
         try:
             self.bodylog_service.save_today(self.wellness_level.currentData())
-            self.bodylog_status.setText("已保存今天的自报；它只代表你主动填写的记录。")
         except PermissionError:
             self._sync_bodylog(False)
         self._sync_bodylog(self.bodylog_service.enabled)
@@ -832,7 +881,6 @@ class SettingsPage(QWidget):
         settings_content.setMaximumWidth(920)
         root = QVBoxLayout(settings_content)
         root.setSpacing(14)
-        root.addWidget(label("哪些信息会被记录、是否使用 AI，都由你决定；每项都可以单独关闭。", "pageLead"))
         self.sections = QTabWidget()
         root.addWidget(self.sections)
         general = QWidget()
@@ -849,7 +897,7 @@ class SettingsPage(QWidget):
         )
         self.companion_enabled.toggled.connect(self._toggle_companion)
         root.addWidget(self.companion_enabled)
-        root.addWidget(label("伙伴只显示你确认过的任务和手动选择的情境。语音输入目前需要另行设置离线语音包；按住说话时才会使用麦克风，录音不会保存成文件。", "mutedText"))
+        self.companion_enabled.setToolTip("在桌面快捷查看任务和切换情境。")
 
         self.monitoring = QCheckBox("开启电脑使用统计（默认关闭）")
         self.monitoring.setChecked(controller.enabled)

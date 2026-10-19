@@ -2,11 +2,11 @@
 
 DeskCare 是一个 Windows 本地优先的数字健康习惯辅助与今日任务联动工具。它不是医疗诊断器、生产力评分器或全天候行为监视器。
 
-## 当前开发阶段：UI1 界面更新，等待 Windows 人工体验
+## 当前开发阶段：UI2 交互细节更新，等待 Windows 人工体验
 
-UI1 使用五项左侧导航（今日任务、使用统计、状态打卡、日报与周报、设置与隐私），统计改为随本地记录更新的柱状图/环形图/应用排行，报告显示排版后的 Markdown 并随记录变化刷新，设置按常用功能、提醒与状态、AI 服务、数据与隐私分类。应用数据和独立授权规则保持原有语义。新包说明见 `docs/UI1_使用说明.md`。
+UI2 在 UI1 五项左侧导航（今日任务、使用统计、状态打卡、日报与周报、设置与隐私）的基础上，统一浅色弹窗和无原生黑框的下拉/数字控件，图表从上一帧平滑过渡，状态页增加近七天自主记录，并简化桌面伙伴、移除内置语音输入。应用数据和独立授权规则保持原有语义。新包说明见 `docs/UI2_使用说明.md`。
 
-DeskCare 已实现 M0–M18 的代码阶段工作，包括 XLSX 清单导入、贴边圆形伙伴、任务/提醒/报告闭环和演示数据隔离。M15–M18 自动化回归已覆盖新增数据留痕与异常路径；本轮 Windows 新发布包和真实设备验收以 `PROGRESS.md` 的最新记录为准。真实麦克风/模型/API、不同 DPI/多屏和普通用户可用性仍需实机验收。
+DeskCare 已实现 M0–M18 的代码阶段工作，包括 XLSX 清单导入、贴边圆形伙伴、任务/提醒/报告闭环和演示数据隔离。M15–M18 自动化回归已覆盖新增数据留痕与异常路径；本轮 Windows 新发布包和真实设备验收以 `PROGRESS.md` 的最新记录为准。真实模型/API、不同 DPI/多屏和普通用户可用性仍需实机验收。
 
 - “今日任务”“使用统计”“状态打卡”“日报与周报”“设置与隐私”左侧导航；
 - 系统托盘打开、暂停监测、退出；没有系统托盘时回退到可见窗口退出；
@@ -20,7 +20,7 @@ DeskCare 已实现 M0–M18 的代码阶段工作，包括 XLSX 清单导入、�
 - 使用统计页提供最近 7 天按应用累计的时长；撤回应用明细授权会清除已保存的应用级数据；
 - 休息提醒可显示可关闭、可跳过的轻柔活动建议，不作医学判断或疗效承诺；
 - 可在设置或托盘显式开启桌面伙伴；默认隐藏、可拖动/隐藏；拖到屏幕左右边缘会收成小芽吉祥物半露状态，点击即可展开；提供任务快速添加、勾选完成和情境选择；
-- 可选按住录音的本地语音输入：源码运行需安装可选 Vosk 依赖；M18 Windows 发布包已包含 Vosk 运行库，但两者都不包含语音模型，仍需用户自行准备并选择离线模型；录音只在内存中，松开后识别成草稿，需手动确认后才保存；失败不回退云服务；
+- UI2 按用户反馈移除内置语音转文字、录音、模型选择及 Vosk 依赖；桌面伙伴只保留任务与情境操作，不访问麦克风；
 - 设置页支持经确认后清除已保存的活动聚合，不偷偷改变监测授权；
 - 今日页支持手工添加、编辑、删除和状态修改；
 - 支持用户主动选择 `.txt` / `.md` / `.csv` / `.xlsx` 文件，先生成可编辑任务草稿预览，再由用户确认入库；
@@ -47,7 +47,7 @@ DeskCare 已实现 M0–M18 的代码阶段工作，包括 XLSX 清单导入、�
 
 接口与边界位于 `deskcare/importers/`、`deskcare/ai/`、`deskcare/services/task_service.py`、`deskcare/sensors/base.py`、`deskcare/services/reminder_service.py`、`deskcare/services/personalization_service.py`、`deskcare/services/bodylog_service.py` 和 `deskcare/services/report_engine.py`；M4 本地模板仍是可靠兜底，M6 的 AI 只辅助任务候选和用户主动触发的 FactSheet 文案改写。
 
-当前仍不做云端 LLM 调用、医学判断、自动任务完成或应用锁。M1 的 Windows provider 只在 Windows 环境实例化；非 Windows 环境使用明确标记的 FakeProvider。M6 不内置或下载模型；如果没有本机 Ollama-compatible 服务，界面仍使用规则导入。
+联网 AI 仅支持逐次确认的任务清单整理；不做医学判断、自动任务完成或应用锁。M1 的 Windows provider 只在 Windows 环境实例化；非 Windows 环境使用明确标记的 FakeProvider。M6 不内置或下载模型；如果没有本机 Ollama-compatible 服务，界面仍使用规则导入。
 
 ## 运行
 
@@ -58,7 +58,7 @@ python -m pip install -e ".[dev]"
 python -m deskcare
 ```
 
-可选本地语音输入：源码运行时执行 `python -m pip install -e ".[voice]"`；M18 Windows 发布包已自带 Vosk 运行库。两种方式都需要另行下载并解压 Vosk 中文模型，再在桌面伙伴中选择模型文件夹（模型不随项目/发布包提供）。按住“按住说话”录音，松开停止；转写内容只写入草稿框，需再次确认。若麦克风或模型不可用，可直接手动输入。详情见 `docs/M8_语音隐私与人工验收.md`。
+UI2 不含语音输入组件，不需要安装或选择语音模型。可直接输入任务；如使用系统听写，由 Windows 自身的设置和隐私规则管理，DeskCare 不调用麦克风。旧版语音文档仅作历史记录。
 
 比赛演示或离线回归时，可以显式使用模拟 provider；模拟数据会在界面中标注，且仍需手动开启活动统计。演示模式使用单独数据库 `%LOCALAPPDATA%\DeskCare\demo\deskcare-demo.sqlite3`，不会混入日常活动报告：
 
@@ -123,10 +123,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify_windows_package.ps1 -E
 
 ### 已验证发布 ZIP
 
-`release\DeskCare-UI1-windows-x64-portable.zip` 是本轮界面更新的便携交付物；完整解压后，进入内层 `DeskCare-UI1` 文件夹运行 `DeskCare-UI1.exe`。实际桌面启动与体验仍需用户确认；本轮使用离屏截图与自动化验证，没有操作用户桌面。SHA-256 见 `release/DeskCare-UI1-SHA256.txt`。M18r1 和更早版本保留供追溯；源码仓库为 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)，本轮远端同步状态请看 `PROGRESS.md`，不要把本地完成等同于已推送。
+`release\DeskCare-UI2-windows-x64-portable.zip` 是本轮界面更新的便携交付物；完整解压后，进入内层 `DeskCare-UI2` 文件夹运行 `DeskCare-UI2.exe`。实际桌面启动与体验仍需用户确认；本轮使用离屏截图与自动化验证，没有操作用户桌面。SHA-256 见 `release/DeskCare-UI2-SHA256.txt`。M18r1 和更早版本保留供追溯；源码仓库为 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)，本轮远端同步状态请看 `PROGRESS.md`，不要把本地完成等同于已推送。
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\release\DeskCare-UI1-windows-x64-portable.zip
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-UI2-windows-x64-portable.zip
 ```
 
 ### 可复现策略对照
@@ -153,7 +153,7 @@ pytest -q
 
 M15–M18 阶段验收、Windows 实机检查与尚未实测边界见 `docs/M15-M18_阶段验收与Windows实机清单.md`；产品定位与当前架构见 `docs/产品定位与技术架构.md`；常见问题排查见 `docs/Windows_常见问题与故障排查.md`。旧版 M10/M11 清单仅记录当时阶段，后续范围以新清单为准。
 
-当前 M1 演示流程见 `docs/M1_演示脚本.md`，M2 演示流程见 `docs/M2_演示脚本.md`，M2 验收记录见 `docs/M2_验收记录.md`，Windows 人工验收清单见 `docs/M2_Windows人工验收清单.md`。
+历史 M1 演示流程见 `docs/M1_演示脚本.md`，M2 演示流程见 `docs/M2_演示脚本.md`，M2 验收记录见 `docs/M2_验收记录.md`，Windows 人工验收清单见 `docs/M2_Windows人工验收清单.md`。
 M3 演示流程见 `docs/M3_演示脚本.md`，M4 演示流程见 `docs/M4_演示脚本.md`，M4 验收记录见 `docs/M4_验收记录.md`。
 M5 验收记录见 `docs/M5_验收记录.md`，M5 演示流程见 `docs/M5_演示脚本.md`，Windows 清单见 `docs/M5_Windows人工验收清单.md`。
 M6 验收记录见 `docs/M6_验收记录.md`，M6 演示流程见 `docs/M6_演示脚本.md`，Windows 清单见 `docs/M6_Windows人工验收清单.md`。

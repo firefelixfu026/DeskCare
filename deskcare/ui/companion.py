@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-
-from PySide6.QtCore import QEvent, QObject, QRect, QThread, QTimer, Qt, Signal, Slot
+from PySide6.QtCore import QEvent, QRect, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QCursor,
@@ -15,11 +12,9 @@ from PySide6.QtGui import (
     QRadialGradient,
     QRegion,
 )
-from PySide6.QtMultimedia import QAudioSource, QMediaDevices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QFileDialog,
     QApplication,
     QHBoxLayout,
     QLabel,
@@ -31,8 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from deskcare.domain.types import TaskStatus
-from deskcare.voice.audio import to_vosk_pcm16
-from deskcare.voice.vosk_adapter import transcribe_pcm
+from deskcare.ui.theme import STYLE, apply_theme
 
 
 class SproutMascot(QWidget):
@@ -105,26 +99,6 @@ class SproutMascot(QWidget):
         super().mouseReleaseEvent(event)
 
 
-class _TranscribeWorker(QObject):
-    finished = Signal(str, str)
-
-    def __init__(self, model_path: str, pcm: bytes, sample_rate: int, channels: int, sample_format):
-        super().__init__()
-        self.model_path = model_path
-        self.pcm = pcm
-        self.sample_rate = sample_rate
-        self.channels = channels
-        self.sample_format = sample_format
-
-    @Slot()
-    def run(self):
-        try:
-            mono_pcm = to_vosk_pcm16(self.pcm, self.sample_rate, self.channels, self.sample_format)
-            self.finished.emit(transcribe_pcm(self.model_path, mono_pcm), "")
-        except Exception as exc:
-            self.finished.emit("", str(exc))
-
-
 class CompanionWindow(QWidget):
     """Frameless, draggable top-level helper; hidden unless explicitly enabled."""
 
@@ -139,24 +113,17 @@ class CompanionWindow(QWidget):
         self._drag_offset = None
         self._peek_side: str | None = None
         self._expanded_size = None
-        self._audio_source = None
-        self._audio_device = None
-        self._audio_format = None
-        self._audio_max_bytes = 0
-        self._audio_buffer = bytearray()
-        self._voice_thread = None
-        self._voice_worker = None
         self.setObjectName("deskcareCompanion")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowTitle("DeskCare 桌面伙伴")
         self.setFixedWidth(300)
-        self.setStyleSheet(
-            "QWidget#companionContent{background:#F7F5F0;color:#24312E;border:1px solid #C9D9D0;border-radius:20px;}"
-            "QLabel{color:#214F45;} QPushButton{background:#2F6B5F;color:white;border:0;border-radius:9px;padding:8px;}"
-            "QLineEdit,QComboBox{color:#24312E;background:white;border:1px solid #D7E1DB;border-radius:8px;padding:7px;}"
-            "QComboBox QAbstractItemView{color:#24312E;background:#FFFFFF;selection-color:#214F45;selection-background-color:#D4E4D9;outline:0;}"
-            "QComboBox QAbstractItemView::item{color:#24312E;padding:8px 10px;min-height:24px;}"
-        )
+        apply_theme(QApplication.instance())
+        self.setStyleSheet(STYLE + """
+            QWidget#deskcareCompanion { background: transparent; }
+            QWidget#companionContent { background: #FFFFFF; border: 1px solid #D8E4DE; border-radius: 18px; }
+        """)
+        if self.repository is not None:
+            self.repository.delete_setting("voice_model_path")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self.content = QWidget(self)
@@ -165,7 +132,7 @@ class CompanionWindow(QWidget):
         root.setContentsMargins(14, 12, 14, 14)
         title_row = QHBoxLayout()
         title_row.addWidget(SproutMascot(parent=self))
-        title = QLabel("DeskCare · 今日伙伴")
+        title = QLabel("DeskCare")
         title.setObjectName("companionDragHandle")
         title.setCursor(Qt.CursorShape.SizeAllCursor)
         title.setToolTip("拖动这里移动；靠近屏幕左右边缘松开可收成半露状态")
@@ -188,41 +155,23 @@ class CompanionWindow(QWidget):
         self.mode.currentIndexChanged.connect(self._set_mode)
         root.addWidget(QLabel("当前情境"))
         root.addWidget(self.mode)
-        root.addWidget(QLabel("今天要做的事（勾选表示完成）"))
+        root.addWidget(QLabel("今日任务"))
         self.task_list = QVBoxLayout()
         self.task_list.setSpacing(4)
         root.addLayout(self.task_list)
-        open_main = QPushButton("打开 DeskCare 主窗口")
+        open_main = QPushButton("全部任务")
+        open_main.setObjectName("secondaryButton")
         open_main.clicked.connect(self.open_main_requested.emit)
         root.addWidget(open_main)
-        self.task_input = QLineEdit()
-        self.task_input.setPlaceholderText("快速添加一条任务…")
-        self.task_input.returnPressed.connect(self._add_task)
-        root.addWidget(self.task_input)
         add_row = QHBoxLayout()
-        self.add_task_button = QPushButton("添加任务")
+        self.task_input = QLineEdit()
+        self.task_input.setPlaceholderText("添加任务…")
+        self.task_input.returnPressed.connect(self._add_task)
+        add_row.addWidget(self.task_input, 1)
+        self.add_task_button = QPushButton("添加")
         self.add_task_button.clicked.connect(self._add_task)
         add_row.addWidget(self.add_task_button)
-        self.voice_button = QPushButton("按住说话")
-        self.voice_button.setToolTip("语音转文字目前是可选的离线功能，需要先设置语音包。松开后请核对文字草稿；录音只暂存在内存。")
-        self.voice_button.pressed.connect(self._start_recording)
-        self.voice_button.released.connect(self._stop_recording)
-        add_row.addWidget(self.voice_button)
         root.addLayout(add_row)
-        self.model_path = repository.get_setting("voice_model_path", "") if repository is not None else ""
-        self.model_button = QPushButton("选择离线语音包")
-        self.model_button.clicked.connect(self._choose_model)
-        root.addWidget(self.model_button)
-        self.recording_hint = QLabel("语音转文字目前需要额外配置离线语音包；不想设置时，直接输入任务也一样方便。")
-        self.recording_hint.setWordWrap(True)
-        self.recording_hint.setStyleSheet("color:#71817C;font-size:11px")
-        root.addWidget(self.recording_hint)
-        self.transcript = QLineEdit()
-        self.transcript.setPlaceholderText("语音文字草稿：核对后再添加")
-        root.addWidget(self.transcript)
-        confirm = QPushButton("确认并添加")
-        confirm.clicked.connect(self._confirm_transcript)
-        root.addWidget(confirm)
         outer.addWidget(self.content)
         self.peek_button = SproutMascot(interactive=True, parent=self)
         self.peek_button.setFixedSize(88, 88)
@@ -338,7 +287,6 @@ class CompanionWindow(QWidget):
             self.reminder_coordinator.evaluate()
 
     def _hide_companion(self):
-        self.stop_voice_input()
         self.hide_requested.emit()
 
     def _add_task(self):
@@ -352,171 +300,12 @@ class CompanionWindow(QWidget):
             return
         self.task_input.clear()
 
-    def _confirm_transcript(self):
-        draft = self.transcript.text().strip()
-        if not draft:
-            return
-        self.task_input.setText(draft)
-        self._add_task()
-        if not self.task_input.text():
-            self.transcript.clear()
-
-    def _choose_model(self):
-        path = QFileDialog.getExistingDirectory(self, "选择已准备好的离线语音包", self.model_path)
-        if path:
-            self.model_path = path
-            if self.repository is not None:
-                self.repository.set_setting("voice_model_path", path)
-            self.recording_hint.setText("语音输入已设置。按住说话，松开后先检查文字草稿，再决定是否添加。")
-
-    def _start_recording(self):
-        if self._voice_thread is not None and self._voice_thread.isRunning():
-            return
-        if not importlib.util.find_spec("vosk"):
-            self.recording_hint.setText("语音功能组件尚未安装；你仍可直接输入任务。")
-            return
-        if not self.model_path or not Path(self.model_path).is_dir():
-            self.recording_hint.setText("还没有设置语音包。可点“选择离线语音包”，也可以直接输入任务。")
-            return
-        device = QMediaDevices.defaultAudioInput()
-        if device.isNull():
-            self.recording_hint.setText("没有找到可用麦克风；请检查 Windows 麦克风权限，或直接输入任务。")
-            return
-        audio_format = device.preferredFormat()
-        try:
-            to_vosk_pcm16(
-                b"", audio_format.sampleRate(), audio_format.channelCount(), audio_format.sampleFormat()
-            )
-        except (ValueError, RuntimeError) as exc:
-            self.recording_hint.setText(f"当前麦克风格式暂不支持：{exc} 你仍可直接输入任务。")
-            return
-        self._audio_buffer.clear()
-        self._audio_format = audio_format
-        self._audio_max_bytes = max(1, audio_format.bytesPerFrame()) * audio_format.sampleRate() * 30
-        self._audio_source = QAudioSource(device, audio_format, self)
-        self._audio_source.stateChanged.connect(self._audio_state_changed)
-        self._audio_device = self._audio_source.start()
-        if self._audio_device is None:
-            self.recording_hint.setText("暂时无法打开麦克风。请检查 Windows 麦克风权限，或直接输入任务。")
-            self._audio_source.stop()
-            self._audio_source.deleteLater()
-            self._audio_source = None
-            self._audio_format = None
-            return
-        self.recording_hint.setText("正在录音…松开按钮结束，最多 30 秒；录音不会保存成文件。")
-        self.voice_button.setText("正在录音…松开结束")
-        self._audio_timer = QTimer(self)
-        self._audio_timer.setInterval(50)
-        self._audio_timer.timeout.connect(self._read_audio)
-        self._audio_timer.start()
-
-    def _audio_state_changed(self, state):
-        if self._audio_source is None:
-            return
-        if self._audio_source.error() != QAudioSource.Error.NoError:
-            self._audio_source.stop()
-            self._audio_source.deleteLater()
-            self._audio_source = None
-            self._audio_device = None
-            self._audio_buffer.clear()
-            self._audio_format = None
-            timer = getattr(self, "_audio_timer", None)
-            if timer is not None:
-                timer.stop()
-            self.voice_button.setText("按住说话")
-            self.voice_button.setEnabled(True)
-            self.recording_hint.setText("麦克风暂不可用或权限未开启，没有任务被修改；你可以检查设置或直接输入。")
-
-    def _read_audio(self):
-        if self._audio_device is None:
-            return
-        available = self._audio_device.bytesAvailable()
-        if available > 0:
-            self._audio_buffer.extend(bytes(self._audio_device.read(min(available, 8192))))
-        if self._audio_max_bytes and len(self._audio_buffer) >= self._audio_max_bytes:
-            self._stop_recording()
-            self.recording_hint.setText("已达到 30 秒录音上限，正在本机识别。")
-
-    def _stop_recording(self):
-        timer = getattr(self, "_audio_timer", None)
-        if timer is None or not timer.isActive():
-            return
-        timer.stop()
-        self._read_audio()
-        if self._audio_source is not None:
-            self._audio_source.stop()
-            self._audio_source.deleteLater()
-        self._audio_source = None
-        self._audio_device = None
-        self.voice_button.setText("按住说话")
-        if not self._audio_buffer:
-            self._audio_format = None
-            self.recording_hint.setText("没有录到语音；音频缓冲已丢弃。")
-            return
-        self.voice_button.setEnabled(False)
-        self.recording_hint.setText("正在本机识别；识别完成前音频只保存在内存中。")
-        thread = QThread(self)
-        worker = _TranscribeWorker(
-            self.model_path,
-            bytes(self._audio_buffer),
-            self._audio_format.sampleRate(),
-            self._audio_format.channelCount(),
-            self._audio_format.sampleFormat(),
-        )
-        self._audio_buffer.clear()
-        self._audio_format = None
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._on_transcribed)
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        self._voice_thread = thread
-        self._voice_worker = worker
-        thread.finished.connect(self._on_voice_thread_finished)
-        thread.start()
-
-    def _on_transcribed(self, text: str, error: str):
-        self.voice_button.setEnabled(True)
-        if error:
-            self.recording_hint.setText(f"语音没有识别成功：{error}。你可以重试或直接输入任务。")
-        elif not text:
-            self.recording_hint.setText("没有听清内容，任务没有改动。可以重试或直接输入。")
-        else:
-            self.transcript.setText(text)
-            self.recording_hint.setText("这是待确认的文字草稿。检查无误后点击“确认并添加”才会保存。")
-
-    @Slot()
-    def _on_voice_thread_finished(self):
-        self._voice_thread = None
-        self._voice_worker = None
-        self.voice_button.setEnabled(True)
-
     def closeEvent(self, event):
         if self.isVisible():
             event.ignore()
-            self.stop_voice_input()
             self.hide_requested.emit()
             return
-        self.stop_voice_input()
         super().closeEvent(event)
-
-    def stop_voice_input(self):
-        timer = getattr(self, "_audio_timer", None)
-        if timer is not None:
-            timer.stop()
-        if self._audio_source is not None:
-            self._audio_source.stop()
-            self._audio_source.deleteLater()
-        self._audio_source = None
-        self._audio_device = None
-        self._audio_buffer.clear()
-        self._audio_format = None
-        self.voice_button.setText("按住说话")
-        self.voice_button.setEnabled(True)
-        if self._voice_thread is not None and self._voice_thread.isRunning():
-            self._voice_thread.quit()
-            self._voice_thread.wait()
 
     def refresh_tasks(self):
         while self.task_list.count():
@@ -528,9 +317,9 @@ class CompanionWindow(QWidget):
         if not tasks:
             self.task_list.addWidget(QLabel("暂无今日任务"))
         for task in tasks[:6]:
-            box = QCheckBox(task.title)
+            box = QCheckBox(self.fontMetrics().elidedText(task.title, Qt.TextElideMode.ElideRight, 245))
             box.setChecked(task.status is TaskStatus.DONE)
-            box.setToolTip("只在你勾选时更新本地任务状态")
+            box.setToolTip(task.title)
             box.toggled.connect(lambda checked, task_id=task.id: self._toggle_task(task_id, checked))
             self.task_list.addWidget(box)
 

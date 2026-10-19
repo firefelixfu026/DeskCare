@@ -39,18 +39,11 @@ $args = @(
     "--workpath", $workPath,
     "--add-data", "$assetPath;assets",
     "--specpath", "build",
+    "--exclude-module", "vosk",
+    "--exclude-module", "PySide6.QtMultimedia",
+    "--exclude-module", "PySide6.QtMultimediaWidgets",
     $entryPath
 )
-$voiceRuntime = & $Python -c "import importlib.util; print('yes' if importlib.util.find_spec('vosk') else 'no')"
-if ($LASTEXITCODE -ne 0) {
-    throw "Could not check optional local voice runtime"
-}
-if ($voiceRuntime.Trim() -eq "yes") {
-    $args += @("--collect-all", "vosk")
-    Write-Host "Including optional Vosk runtime; no speech model is bundled."
-} else {
-    Write-Warning "Vosk is not installed in this Python environment. This package will retain manual task entry, but offline voice input will require rebuilding after installing .[voice]."
-}
 & $Python @args
 if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller build failed with exit code $LASTEXITCODE"
