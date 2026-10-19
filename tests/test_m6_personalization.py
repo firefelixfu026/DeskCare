@@ -186,11 +186,13 @@ def test_settings_privacy_controls_remain_reachable_in_short_window(tmp_path):
         personalization_service=ReminderPersonalizationService(repository),
     )
     page.resize(760, 420)
+    page.sections.setCurrentIndex(3)
     page.show()
     app.processEvents()
 
     scroll_bar = page.settings_scroll.verticalScrollBar()
-    assert scroll_bar.maximum() > 0
+    # Grouped privacy controls can fit without scrolling; either way the
+    # destructive action must remain reachable in a short window.
     scroll_bar.setValue(scroll_bar.maximum())
     app.processEvents()
     assert page.clear_all_button.isVisible() is True

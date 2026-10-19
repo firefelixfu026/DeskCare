@@ -14,11 +14,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QLayout,
     QPushButton,
     QScrollArea,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QMessageBox,
     QInputDialog,
     QTextEdit,
@@ -37,6 +39,8 @@ from deskcare.services.reminder_service import (
 )
 from deskcare.services.report_engine import LocalReportService, ReportPeriod
 from deskcare.ui.task_dialog import ImportPreviewDialog, TaskFormDialog
+from deskcare.ui.charts import UsageChart
+from deskcare.ui.report_preview import ReportPreview
 
 
 ACTIVITY_TIPS = (
@@ -116,6 +120,7 @@ class TodayPage(QWidget):
 
         state_row = QHBoxLayout()
         self.monitoring_badge = label("电脑使用统计未开启", "statusBadge")
+        self.monitoring_badge.setWordWrap(False)
         state_row.addWidget(self.monitoring_badge)
         state_row.addStretch()
         add_button = QPushButton("添加任务")
@@ -182,6 +187,8 @@ class TodayPage(QWidget):
         self.task_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.task_table.horizontalHeader().setStretchLastSection(False)
         self.task_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        for column in (0, 2, 3):
+            self.task_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         task_layout.addWidget(self.task_table)
         self.empty_state = label("今天还没有任务。可以手动添加，也可以从文字清单导入。", "mutedText")
         task_layout.addWidget(self.empty_state)
@@ -195,7 +202,6 @@ class TodayPage(QWidget):
         actions.addStretch()
         task_layout.addLayout(actions)
         root.addWidget(task_frame)
-        root.addWidget(card("下一步建议", "电脑使用统计默认关闭。你可以在“设置与隐私”中自行开启；不开启也可以正常管理任务。", "#7D9FB3"))
         root.addStretch()
         controller.subscribe(self._sync)
         if self.task_service is not None:
@@ -312,7 +318,10 @@ class TodayPage(QWidget):
             )
             self.task_table.setCellWidget(row, 0, status)
             self.task_table.setItem(row, 1, QTableWidgetItem(task.title))
-            self.task_table.setItem(row, 2, QTableWidgetItem(task.due_at.isoformat(timespec="minutes") if task.due_at else "未设置"))
+            due_item = QTableWidgetItem(task.due_at.astimezone().strftime("%m月%d日 %H:%M") if task.due_at else "未设置")
+            if task.due_at:
+                due_item.setToolTip(task.due_at.isoformat(timespec="minutes"))
+            self.task_table.setItem(row, 2, due_item)
             self.task_table.setItem(row, 3, QTableWidgetItem(str(task.estimated_minutes or "—")))
 
     def _set_status(self, task_id: int, status: TaskStatus) -> None:
@@ -381,26 +390,46 @@ class UsagePage(QWidget):
         super().__init__(parent)
         self.controller = controller
         self.collector = collector
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        content.setObjectName("usageContent")
+        root = QVBoxLayout(content)
+        root.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
         root.setSpacing(16)
         root.addWidget(label("看看电脑大致用了多久。这里的时间是估算值，不代表工作质量。", "pageLead"))
         grid = QGridLayout()
         grid.setSpacing(12)
         active_frame, self.active_value = self._metric_card("今天活跃时间估计", "未开启统计", "#7D9FB3")
-        category_frame, self.category_value = self._metric_card("类别汇总", "暂无数据", "#D69E52")
+        category_frame, self.continuous_value = self._metric_card("当前连续活跃", "暂无数据", "#D69E52")
         grid.addWidget(active_frame, 0, 0)
         grid.addWidget(category_frame, 0, 1)
         root.addLayout(grid)
         self.demo_banner = label("", "demoBanner")
         root.addWidget(self.demo_banner)
         self.session_value = label("", "cardBody")
-        session_frame = QFrame()
-        session_frame.setObjectName("card")
-        session_layout = QVBoxLayout(session_frame)
-        session_layout.setContentsMargins(18, 15, 18, 15)
-        session_layout.addWidget(label("统计状态", "cardTitle"))
-        session_layout.addWidget(self.session_value)
-        root.addWidget(session_frame)
+        root.addWidget(self.session_value)
+        self.sections = QTabWidget()
+        root.addWidget(self.sections, 1)
+        overview = QWidget()
+        overview_layout = QHBoxLayout(overview)
+        overview_layout.setContentsMargins(0, 0, 0, 0)
+        self.week_chart = UsageChart("columns")
+        self.category_chart = UsageChart("donut")
+        for title, chart in (("最近 7 天 · 活跃时间", self.week_chart), ("今天 · 应用类别占比", self.category_chart)):
+            panel = QFrame()
+            panel.setObjectName("card")
+            panel_layout = QVBoxLayout(panel)
+            panel_layout.setContentsMargins(18, 16, 18, 14)
+            panel_layout.addWidget(label(title, "cardTitle"))
+            panel_layout.addWidget(chart, 1)
+            overview_layout.addWidget(panel, 1)
+        self.sections.addTab(overview, "使用概览")
         app_frame = QFrame()
         app_frame.setObjectName("card")
         app_layout = QVBoxLayout(app_frame)
@@ -408,9 +437,14 @@ class UsagePage(QWidget):
         app_layout.addWidget(label("最近 7 天 · 各应用使用时长", "cardTitle"))
         self.app_usage_value = label("具体应用明细默认关闭。", "appUsageValue")
         app_layout.addWidget(self.app_usage_value)
-        root.addWidget(app_frame)
-        root.addWidget(card("你可以放心", "DeskCare 不记录你输入的内容、截图、网页地址或文件内容。按应用统计需要单独开启；关闭后会删除已保存的应用使用记录。", "#C56B5D"))
-        root.addStretch()
+        app_scroll = QScrollArea()
+        app_scroll.setWidgetResizable(True)
+        app_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.app_chart = UsageChart("bars")
+        app_scroll.setWidget(self.app_chart)
+        app_layout.addWidget(app_scroll, 1)
+        self.sections.addTab(app_frame, "应用排行")
+        root.addWidget(label("只展示经你授权的本地聚合记录 · 将鼠标移到图上可查看时间", "mutedText"))
         controller.subscribe(self._sync)
         if collector is not None:
             collector.subscribe(lambda _result: self._sync(controller.enabled, controller.paused))
@@ -431,41 +465,49 @@ class UsagePage(QWidget):
 
     def _sync(self, enabled: bool, paused: bool) -> None:
         self._sync_app_usage()
+        self.demo_banner.hide()
         if not enabled:
+            self.week_chart.set_values((), "开启统计后，这里会显示最近 7 天的记录")
+            self.category_chart.set_values((), "当前未开启电脑使用统计")
             self.active_value.setText("未开启监测\n\n不会把未采集的数据表示为 0 分钟。")
-            self.category_value.setText("暂无数据")
+            self.continuous_value.setText("未开启统计")
             self.session_value.setText("电脑使用统计尚未开启。你仍可正常管理任务。")
             self.demo_banner.setText("目前没有收集使用时间，因此不会显示成 0 分钟。")
             return
         if self.collector is None:
             self.active_value.setText("统计刚开启，正在收集使用时间")
-            self.category_value.setText("统计暂时不可用")
+            self.continuous_value.setText("统计暂时不可用")
             self.session_value.setText("统计暂时不可用；其他功能仍可继续使用。")
             return
         rows = self.collector.usage_for_day(date.today())
+        week = []
+        for offset in range(6, -1, -1):
+            day = date.today() - timedelta(days=offset)
+            day_rows = self.collector.usage_for_day(day)
+            week.append((day.strftime("%m/%d"), sum(row.active_seconds for row in day_rows) if day_rows else None))
+        self.week_chart.set_values(week)
+        self.category_chart.set_values([
+            (CATEGORY_DISPLAY_NAMES.get(row.category, "其他应用"), row.active_seconds)
+            for row in rows if row.active_seconds > 0
+        ], "今天还没有可显示的活跃记录")
         active = sum(row.active_seconds for row in rows)
         idle = sum(row.idle_seconds for row in rows)
         unknown = sum(row.unknown_seconds for row in rows)
         if not rows:
             self.active_value.setText("统计已开启，正在收集使用时间")
-            self.category_value.setText("今天还没有可显示的数据")
         else:
             self.active_value.setText(
             f"活跃约 {active / 60:.1f} 分钟\n"
             f"空闲约 {idle / 60:.1f} 分钟 · 未能判断约 {unknown / 60:.1f} 分钟"
             )
-            category_lines = [
-                f"{CATEGORY_DISPLAY_NAMES.get(row.category, '其他应用')}：{row.active_seconds / 60:.1f} 分钟"
-                for row in rows
-                if row.active_seconds > 0
-            ]
-            self.category_value.setText("\n".join(category_lines) or "暂无活跃类别")
         state = "已暂停" if paused else "运行中"
         continuous = self.collector.continuous_active_seconds
+        self.continuous_value.setText(f"约 {continuous / 60:.1f} 分钟" + (" · 已暂停" if paused else ""))
         self.session_value.setText(
             f"统计{state}。连续使用时间约 {continuous / 60:.1f} 分钟。电脑锁屏或休眠期间不会算作持续使用。"
         )
         reason = self.collector.last_result.reason
+        self.demo_banner.setVisible(reason in {"provider_error", "long_gap", "non_monotonic_sample", "observation_unavailable"})
         if reason == "provider_error":
             self.demo_banner.setText("这次没有记录到使用时间。你可以稍后重试，其他功能不受影响。")
         elif reason == "long_gap":
@@ -484,17 +526,20 @@ class UsagePage(QWidget):
     def _sync_app_usage(self) -> None:
         if self.collector is None:
             self.app_usage_value.setText("统计服务未连接。")
+            self.app_chart.set_values((), "统计服务尚未连接")
             return
         repository = self.collector.repository
         if repository.get_consent("app_name_stats") is not True:
             self.app_usage_value.setText("未开启独立授权；不会保存具体应用标识。")
+            self.app_chart.set_values((), "如需查看应用排行，请在设置中单独开启应用名称统计")
             return
         rows = repository.app_usage_for_period(date.today() - timedelta(days=6), date.today())
+        self.app_chart.set_values([
+            (APP_DISPLAY_NAMES.get(row.app_id, row.app_id), row.active_seconds)
+            for row in rows if row.active_seconds > 0
+        ], "已授权，最近 7 天尚无应用记录")
         self.app_usage_value.setText(
-            "\n".join(
-                f"{APP_DISPLAY_NAMES.get(row.app_id, row.app_id)}　约 {row.active_seconds / 60:.1f} 分钟"
-                for row in rows
-            )
+            f"最近 7 天记录了 {len(rows)} 个应用，按活跃时间排列。"
             if rows
             else "已授权，最近 7 天尚无可显示的应用时长。"
         )
@@ -512,9 +557,13 @@ class ReportsPage(QWidget):
         self._report_ai_worker: _ReportAIWorker | None = None
         self._report_ai_generation = 0
         self._report_ai_base_markdown = ""
+        self._template_markdown = None
+        self._ai_snapshot_visible = False
         root = QVBoxLayout(self)
         root.setSpacing(16)
         root.addWidget(label("回顾最近的任务和电脑使用情况。记录只是参考，不是健康或效率评判。", "pageLead"))
+        self.sections = QTabWidget()
+        root.addWidget(self.sections, 1)
 
         bodylog_frame = QFrame()
         bodylog_frame.setObjectName("card")
@@ -537,7 +586,12 @@ class ReportsPage(QWidget):
         bodylog_actions.addStretch()
         bodylog_layout.addLayout(bodylog_actions)
         bodylog_layout.addWidget(label("只记录你主动选择的简单状态，不是医学检查；你可以不记录，也可以随时删除。", "mutedText"))
-        root.addWidget(bodylog_frame)
+        status_page = QWidget()
+        status_layout = QVBoxLayout(status_page)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.addWidget(bodylog_frame)
+        status_layout.addStretch()
+        self.sections.addTab(status_page, "我的状态")
 
         report_frame = QFrame()
         report_frame.setObjectName("card")
@@ -565,13 +619,12 @@ class ReportsPage(QWidget):
         report_layout.addLayout(report_top)
         self.report_sources = label("", "mutedText")
         report_layout.addWidget(self.report_sources)
-        self.report_text = QTextEdit()
-        self.report_text.setReadOnly(True)
+        self.report_text = ReportPreview()
         self.report_text.setMinimumHeight(260)
         report_layout.addWidget(self.report_text)
         report_layout.addWidget(label("小结只使用 DeskCare 已记录的信息。缺少记录时会直接说明，不会猜测你的健康或工作效率。", "mutedText"))
-        root.addWidget(report_frame)
-        root.addStretch()
+        self.sections.addTab(report_frame, "日报与周报")
+        self.sections.setCurrentIndex(1)
         if self.bodylog_service is not None:
             self.bodylog_service.subscribe(self._sync_bodylog)
         else:
@@ -583,6 +636,8 @@ class ReportsPage(QWidget):
 
     def _sync_local_ai(self, enabled: bool) -> None:
         self.ai_report_button.setEnabled(enabled)
+        if not enabled:
+            self.refresh_report()
 
     def _sync_bodylog(self, enabled: bool) -> None:
         self.bodylog_status.setText(
@@ -635,6 +690,8 @@ class ReportsPage(QWidget):
         return ReportPeriod("weekly", start, start + timedelta(days=6))
 
     def refresh_report(self) -> None:
+        was_snapshot = self._ai_snapshot_visible
+        self._ai_snapshot_visible = False
         self._report_ai_generation += 1
         if self.report_service is None:
             self.report_text.setPlainText("小结暂时不可用。")
@@ -642,7 +699,10 @@ class ReportsPage(QWidget):
             return
         period = self._current_period(self.report_period.currentData() or "daily")
         facts, markdown = self.report_service.render(period)
-        self.report_text.setPlainText(markdown)
+        if markdown == self._template_markdown and not was_snapshot:
+            return
+        self._template_markdown = markdown
+        self.report_text.set_report(markdown)
         quality = facts["data_quality"]
         self.report_sources.setText(
             f"小结依据：电脑使用记录、你确认的任务和提醒反馈；"
@@ -650,6 +710,17 @@ class ReportsPage(QWidget):
             f"状态打卡：{'已开启' if quality['wellness_opt_in'] else '未开启'}；"
             f"生成方式：DeskCare 本机整理"
         )
+
+    def notify_data_changed(self) -> None:
+        # A model request describes the snapshot selected by the user. Do not
+        # invalidate it every five seconds or silently mix it with newer facts.
+        if self._report_ai_thread is not None or self._ai_snapshot_visible:
+            self.report_sources.setText(
+                "当前为本机 AI 整理时的记录快照；点“刷新报告”可查看最新记录。"
+                if self._ai_snapshot_visible else "本机 AI 正在整理点击时的记录；其他功能可继续使用。"
+            )
+            return
+        self.refresh_report()
 
     def _rewrite_with_ai(self) -> None:
         if self.report_service is None or self.local_ai_service is None or not self.local_ai_service.enabled:
@@ -686,13 +757,14 @@ class ReportsPage(QWidget):
             self.refresh_report()
             return
         if used_model:
-            self.report_text.setPlainText(
+            self._ai_snapshot_visible = True
+            self.report_text.set_report(
                 f"{markdown}\n\n---\n\n{self._report_ai_base_markdown}"
             )
         else:
-            self.report_text.setPlainText(markdown)
+            self.report_text.set_report(markdown)
         self.report_sources.setText(
-            "由本机 AI 协助整理；记录中的时间和数字仍由 DeskCare 提供。"
+            "本机 AI 整理快照；记录中的时间和数字仍由 DeskCare 提供。点“刷新报告”可查看最新记录。"
             if used_model
             else "本机 AI 暂时不可用，已显示 DeskCare 的基础小结。"
         )
@@ -761,7 +833,14 @@ class SettingsPage(QWidget):
         root = QVBoxLayout(settings_content)
         root.setSpacing(14)
         root.addWidget(label("哪些信息会被记录、是否使用 AI，都由你决定；每项都可以单独关闭。", "pageLead"))
-        root.addWidget(card("隐私说明", "电脑使用统计默认关闭。你开启后，DeskCare 只记录大致的活跃时间和应用类别；只有你主动选文件时才读取清单，并且只有确认后的任务才会保存。不记录键盘输入、截图、窗口标题、网页地址或剪贴板内容。", "#2F6B5F"))
+        self.sections = QTabWidget()
+        root.addWidget(self.sections)
+        general = QWidget()
+        root = QVBoxLayout(general)
+        root.setContentsMargins(4, 8, 4, 12)
+        root.setSpacing(14)
+        self.sections.addTab(general, "常用设置")
+        root.addWidget(card("桌面与电脑统计", "选择日常要用的功能。电脑统计与应用名称统计分别由你开启。"))
 
         self.companion_enabled = QCheckBox("显示桌面伙伴（默认关闭；可随时隐藏）")
         self.companion_enabled.setChecked(
@@ -792,6 +871,12 @@ class SettingsPage(QWidget):
             "只有同时开启电脑使用统计和此项，才会记录应用名称。关闭后会立即删除已有应用时长；类别汇总不受影响。",
             "mutedText",
         ))
+        root.addStretch()
+        reminders = QWidget()
+        root = QVBoxLayout(reminders)
+        root.setContentsMargins(4, 8, 4, 12)
+        root.setSpacing(14)
+        self.sections.addTab(reminders, "提醒与状态")
         self.activity_tips = QCheckBox("休息提醒中显示轻柔、可跳过的活动建议")
         self.activity_tips.setChecked(
             collector.repository.get_setting("activity_tips_enabled", "true") == "true"
@@ -838,6 +923,13 @@ class SettingsPage(QWidget):
             self.reset_personalization, 0, Qt.AlignmentFlag.AlignLeft
         )
         root.addWidget(personalization_card)
+        root.addStretch()
+        ai = QWidget()
+        root = QVBoxLayout(ai)
+        root.setContentsMargins(4, 8, 4, 12)
+        root.setSpacing(14)
+        self.sections.addTab(ai, "AI 服务")
+        root.addWidget(card("按需启用 AI", "不设置 AI 也能管理任务、查看统计和生成本地小结。"))
         self.local_ai = QCheckBox("允许本机 AI 帮我整理任务清单和小结（默认关闭）")
         self.local_ai.setChecked(local_ai_service.enabled if local_ai_service is not None else False)
         self.local_ai.setEnabled(local_ai_service is not None)
@@ -951,6 +1043,13 @@ class SettingsPage(QWidget):
         cloud_layout.addWidget(cloud_advanced)
         root.addWidget(cloud_card)
 
+        root.addStretch()
+        privacy = QWidget()
+        root = QVBoxLayout(privacy)
+        root.setContentsMargins(4, 8, 4, 12)
+        root.setSpacing(14)
+        self.sections.addTab(privacy, "数据与隐私")
+        root.addWidget(card("隐私说明", "电脑使用统计默认关闭。你开启后，DeskCare 只记录大致的活跃时间和应用类别；只有你主动选文件时才读取清单，并且只有确认后的任务才会保存。不记录键盘输入、截图、窗口标题、网页地址或剪贴板内容。"))
         self.pause_button = QPushButton("暂停电脑使用统计" if controller.enabled else "电脑使用统计尚未开启")
         self.pause_button.setEnabled(controller.enabled)
         self.pause_button.setSizePolicy(

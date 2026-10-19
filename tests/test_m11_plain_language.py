@@ -31,7 +31,7 @@ def test_main_surfaces_use_plain_chinese_and_hide_technical_ai_setup_by_default(
         settings.clear_all_button.sizePolicy().horizontalPolicy()
         == QSizePolicy.Policy.Fixed
     )
-    assert "电脑使用情况" in window.navigation.item(1).text()
+    assert "电脑使用情况" in window.navigation.item(1).toolTip()
     assert "BodyLog" not in settings.health.text()
     assert "Local LLM" not in settings.local_ai.text()
     assert settings.local_ai_config.isHidden()

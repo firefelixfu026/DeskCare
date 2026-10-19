@@ -164,7 +164,7 @@ def test_usage_categories_are_displayed_in_chinese(tmp_path):
     collector = ActivityCollector(controller, repository)
     page = UsagePage(controller, collector)
 
-    text = page.category_value.text()
+    text = page.category_chart.accessibleDescription()
     assert "浏览器：0.4 分钟" in text
     assert "会议与通讯：0.6 分钟" in text
     assert "BROWSER" not in text and "MEETING" not in text

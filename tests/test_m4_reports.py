@@ -136,7 +136,7 @@ def test_ai_summary_does_not_replace_the_factual_report(tmp_path):
         local_ai_service=LocalAI(),
     )
     factual_report = page.report_text.toPlainText()
-    page._report_ai_base_markdown = factual_report
+    page._report_ai_base_markdown = page.report_text.markdown
 
     page._on_report_ai_finished(
         page._report_ai_generation,
@@ -146,7 +146,8 @@ def test_ai_summary_does_not_replace_the_factual_report(tmp_path):
     displayed = page.report_text.toPlainText()
 
     assert "整理后的摘要" in displayed
-    assert "---" in displayed
+    assert "## 本机 AI 摘要" not in displayed
+    assert "本机 AI 摘要" in displayed
     assert factual_report in displayed
     page.hide()
     page.deleteLater()

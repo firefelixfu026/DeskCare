@@ -2,11 +2,13 @@
 
 DeskCare 是一个 Windows 本地优先的数字健康习惯辅助与今日任务联动工具。它不是医疗诊断器、生产力评分器或全天候行为监视器。
 
-## 当前开发阶段：M0–M18 代码迭代完成，等待 Windows 人工验收
+## 当前开发阶段：UI1 界面更新，等待 Windows 人工体验
+
+UI1 使用五项左侧导航（今日任务、使用统计、状态打卡、日报与周报、设置与隐私），统计改为随本地记录更新的柱状图/环形图/应用排行，报告显示排版后的 Markdown 并随记录变化刷新，设置按常用功能、提醒与状态、AI 服务、数据与隐私分类。应用数据和独立授权规则保持原有语义。新包说明见 `docs/UI1_使用说明.md`。
 
 DeskCare 已实现 M0–M18 的代码阶段工作，包括 XLSX 清单导入、贴边圆形伙伴、任务/提醒/报告闭环和演示数据隔离。M15–M18 自动化回归已覆盖新增数据留痕与异常路径；本轮 Windows 新发布包和真实设备验收以 `PROGRESS.md` 的最新记录为准。真实麦克风/模型/API、不同 DPI/多屏和普通用户可用性仍需实机验收。
 
-- “今日”“使用统计”“状态与报告”“设置与隐私”四页导航；
+- “今日任务”“使用统计”“状态打卡”“日报与周报”“设置与隐私”左侧导航；
 - 系统托盘打开、暂停监测、退出；没有系统托盘时回退到可见窗口退出；
 - 首次启动活动监测、应用明细、健康打卡、本地 AI 和提醒反馈个性化均默认关闭；
 - 使用明确标注的演示数据；
@@ -121,11 +123,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify_windows_package.ps1 -E
 
 ### 已验证发布 ZIP
 
-`release\DeskCare-M18r1-windows-x64-portable.zip` 是当前推荐交付物；完整解压后，进入内层 `DeskCare-M18r1` 目录运行 `DeskCare-M18r1.exe`（PowerShell 演示命令为 `.\DeskCare-M18r1.exe --demo-scenario`）。`release\DeskCare-M18r1-windows-x64-onefile.zip` 是单文件备选，exe 位于解压目录中。两份 r1 ZIP 已逐项读取校验，包内 EXE 与构建产物 SHA-256 一致；**本次没有启动 r1 GUI**，实际启动验收仍待目标 Windows 设备确认。SHA-256 见 `release/DeskCare-M18r1-SHA256.txt`；M18、M14 及更早包保留供追溯；源码位于 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)。
+`release\DeskCare-UI1-windows-x64-portable.zip` 是本轮界面更新的便携交付物；完整解压后，进入内层 `DeskCare-UI1` 文件夹运行 `DeskCare-UI1.exe`。实际桌面启动与体验仍需用户确认；本轮使用离屏截图与自动化验证，没有操作用户桌面。SHA-256 见 `release/DeskCare-UI1-SHA256.txt`。M18r1 和更早版本保留供追溯；源码仓库为 [DeskCare GitHub 仓库](https://github.com/firefelixfu026/DeskCare)，本轮远端同步状态请看 `PROGRESS.md`，不要把本地完成等同于已推送。
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\release\DeskCare-M18r1-windows-x64-portable.zip
-Get-FileHash -Algorithm SHA256 .\release\DeskCare-M18r1-windows-x64-onefile.zip
+Get-FileHash -Algorithm SHA256 .\release\DeskCare-UI1-windows-x64-portable.zip
 ```
 
 ### 可复现策略对照

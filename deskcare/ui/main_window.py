@@ -1,7 +1,7 @@
 """Main Qt window and page navigation for DeskCare M8."""
 
 from PySide6.QtCore import QSize, QThread, Qt
-from PySide6.QtGui import QFont, QFontDatabase
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
 from deskcare.ui.pages import ReportsPage, SettingsPage, TodayPage, UsagePage
 from deskcare.ui.companion import CompanionWindow
 from deskcare.ui.tray import build_tray_icon
+from deskcare.ui.theme import STYLE
+from deskcare.ui.icons import navigation_icon
 
 
 class MainWindow(QMainWindow):
@@ -60,15 +62,16 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         shell = QWidget()
+        shell.setObjectName("appShell")
         shell_layout = QHBoxLayout(shell)
         shell_layout.setContentsMargins(0, 0, 0, 0)
         shell_layout.setSpacing(0)
 
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(246)
+        sidebar.setFixedWidth(222)
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(22, 28, 22, 22)
+        sidebar_layout.setContentsMargins(18, 28, 18, 22)
         sidebar_layout.setSpacing(16)
         brand = QLabel("DeskCare")
         brand.setObjectName("brand")
@@ -80,20 +83,30 @@ class MainWindow(QMainWindow):
 
         self.navigation = QListWidget()
         self.navigation.setObjectName("navigation")
-        for title, subtitle in (("今日", "任务与休息建议"), ("使用统计", "电脑使用情况"), ("状态与报告", "回顾与小结"), ("设置与隐私", "由你选择和管理")):
-            item = QListWidgetItem(f"{title}\n{subtitle}")
-            item.setSizeHint(QSize(200, 62))
+        entries = (
+            ("今日任务", "安排今天与休息", "tasks"),
+            ("使用统计", "电脑使用情况", "usage"),
+            ("状态打卡", "记下今天的感受", "status"),
+            ("日报与周报", "查看记录与回顾", "report"),
+            ("设置与隐私", "管理功能与数据", "settings"),
+        )
+        for title, subtitle, icon in entries:
+            item = QListWidgetItem(title)
+            item.setToolTip(subtitle)
+            item.setIcon(navigation_icon(icon))
+            item.setSizeHint(QSize(160, 48))
             self.navigation.addItem(item)
+        self.navigation.setIconSize(QSize(20, 20))
+        self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.navigation.currentRowChanged.connect(self._switch_page)
-        sidebar_layout.addWidget(self.navigation)
-        sidebar_layout.addStretch()
+        sidebar_layout.addWidget(self.navigation, 1)
         version = QLabel("记录留在本机 · 隐私由你掌控")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
         content = QWidget()
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(36, 30, 36, 26)
+        content_layout.setContentsMargins(28, 26, 28, 22)
         content_layout.setSpacing(18)
         header = QHBoxLayout()
         self.header_title = QLabel("今日")
@@ -140,6 +153,7 @@ class MainWindow(QMainWindow):
             self.report_service,
             self.local_ai_service,
         )
+        self.reports_page.sections.tabBar().hide()
         self.pages.addWidget(self.reports_page)
         self.settings_page = SettingsPage(
             self.config_store,
@@ -154,6 +168,12 @@ class MainWindow(QMainWindow):
         self.settings_page.companion_visibility_changed.connect(self.set_companion_visible)
         self.settings_page.all_data_cleared.connect(self._refresh_after_data_clear)
         self.pages.addWidget(self.settings_page)
+        if self.task_service is not None:
+            self.task_service.subscribe(self.reports_page.notify_data_changed)
+        if self.activity_collector is not None:
+            self.activity_collector.subscribe(lambda _result: self.reports_page.notify_data_changed())
+        if self.reminder_coordinator is not None:
+            self.reminder_coordinator.subscribe(lambda _snapshot: self.reports_page.notify_data_changed())
         content_layout.addWidget(self.pages)
         self.navigation.setCurrentRow(0)
         shell_layout.addWidget(sidebar)
@@ -182,7 +202,12 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def _switch_page(self, index: int) -> None:
-        self.pages.setCurrentIndex(index)
+        if index < 0:
+            return
+        self.pages.setCurrentIndex((0, 1, 2, 2, 3)[index])
+        if index in (2, 3):
+            self.reports_page.sections.setCurrentIndex(index - 2)
+            self.reports_page.refresh_report()
         self.header_title.setText(self.navigation.item(index).text().splitlines()[0])
 
     def _sync_header(self, enabled: bool, paused: bool) -> None:
@@ -206,42 +231,11 @@ class MainWindow(QMainWindow):
         self.settings_page.companion_enabled.setChecked(False)
 
     def _apply_style(self) -> None:
-        for family in ("Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "SimSun", "Segoe UI"):
-            if QFontDatabase.hasFamily(family):
-                self.setFont(QFont(family))
-                break
-        self.setStyleSheet(
-            """
-            QMainWindow, QWidget { background: #F7F5F0; color: #24312E; }
-            QFrame#sidebar { background: #E8EFEA; border-right: 1px solid #D7E1DB; }
-            QLabel#brand { color: #214F45; font-size: 30px; font-weight: 700; }
-            QLabel#tagline, QLabel#sidebarFooter, QLabel#mutedText { color: #71817C; }
-            QListWidget#navigation { background: transparent; border: none; outline: none; }
-            QListWidget#navigation::item { color: #5D6E68; border-radius: 12px; padding: 10px 12px; margin: 2px 0; }
-            QListWidget#navigation::item:selected { color: #214F45; background: #D4E4D9; font-weight: 700; }
-            QLabel#headerTitle { color: #214F45; font-size: 28px; font-weight: 700; }
-            QLabel#headerState { padding: 8px 13px; border-radius: 14px; background: #E5EBE8; color: #667872; }
-            QLabel#headerState[tone="active"] { background: #D7EADD; color: #24624E; }
-            QLabel#headerState[tone="warning"] { background: #F5E7CB; color: #94611E; }
-            QLabel#statusBadge { padding: 8px 12px; border-radius: 14px; background: #E5EBE8; color: #667872; }
-            QLabel#pageLead { color: #62726C; font-size: 15px; }
-            QFrame#card { background: #FFFFFF; border: 1px solid #E3E8E4; border-radius: 16px; }
-            QFrame#reminderCard { background: #FFF8EA; border: 1px solid #E8D7B5; border-left: 5px solid #D69E52; border-radius: 16px; }
-            QLabel#cardTitle { color: #214F45; font-size: 17px; font-weight: 700; }
-            QLabel#cardBody { color: #5F6E68; line-height: 1.4; }
-            QLabel#contextLabel, QLabel#reminderBody { color: #5F6E68; }
-            QLabel#reminderTitle { color: #80571D; font-size: 17px; font-weight: 700; }
-            QLabel#reminderReason { color: #967647; font-size: 12px; }
-            QPushButton#reminderAction { background: #D69E52; color: #33230E; padding: 8px 12px; }
-            QPushButton#reminderAction:hover { background: #C58A3D; }
-            QLabel#demoBanner { color: #96611E; background: #F8EEDC; border-radius: 10px; padding: 10px; }
-            QPushButton { background: #2F6B5F; color: white; border: none; border-radius: 10px; padding: 10px 16px; }
-            QPushButton:hover { background: #25594F; }
-            QPushButton:disabled { background: #DCE3DF; color: #81908A; }
-            QCheckBox { color: #43534D; padding: 8px 2px; }
-            QScrollArea#settingsScroll, QWidget#settingsContent { background: transparent; }
-            """
-        )
+        font = QFont()
+        font.setFamilies(["Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Noto Sans CJK SC"])
+        font.setPointSize(10)
+        self.setFont(font)
+        self.setStyleSheet(STYLE)
 
     def request_quit(self) -> None:
         self._allow_close = True
