@@ -25,7 +25,7 @@ from deskcare.services.task_service import TaskService
 from deskcare.storage.database import UsageRepository
 from deskcare.ui.main_window import MainWindow
 from deskcare.ui.task_dialog import TaskFormDialog
-from deskcare.domain.types import WellnessLevel
+from deskcare.domain.types import TaskStatus, WellnessLevel
 
 
 def main():
@@ -53,6 +53,8 @@ def main():
         controller = MonitoringController(FakeActivityProvider(), initially_enabled=True)
         collector = ActivityCollector(controller, repository)
         tasks = TaskService(repository)
+        preview_task = tasks.add_manual("整理下一次展示的材料和演示流程", estimated_minutes=30)
+        tasks.set_status(preview_task.id, TaskStatus.DOING)
         reminder = ReminderCoordinator(controller, collector, tasks, repository)
         window = MainWindow(ConfigStore(), controller, collector, tasks, reminder, repository,
                             BodyLogService(repository, True), LocalReportService(repository),

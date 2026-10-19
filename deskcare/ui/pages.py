@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -180,20 +181,33 @@ class TodayPage(QWidget):
         task_layout.setContentsMargins(18, 15, 18, 15)
         task_layout.addWidget(label("今日任务", "cardTitle"))
         self.task_table = QTableWidget(0, 4)
-        self.task_table.setHorizontalHeaderLabels(["状态", "任务", "截止时间", "预计用时（分钟）"])
+        self.task_table.setObjectName("todayTasks")
+        self.task_table.setHorizontalHeaderLabels(["状态", "任务", "截止时间", "预计用时"])
+        self.task_table.setShowGrid(False)
+        self.task_table.setWordWrap(False)
+        self.task_table.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.task_table.verticalHeader().hide()
+        self.task_table.verticalHeader().setDefaultSectionSize(56)
+        self.task_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        self.task_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.task_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.task_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.task_table.horizontalHeader().setStretchLastSection(False)
         self.task_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for column in (0, 2, 3):
-            self.task_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        for column, width in ((0, 132), (2, 152), (3, 104)):
+            self.task_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+            self.task_table.setColumnWidth(column, width)
+        self.task_table.setMinimumHeight(232)
+        self.task_table.itemDoubleClicked.connect(lambda _item: self._edit_selected())
         task_layout.addWidget(self.task_table)
         self.empty_state = label("今天还没有任务。可以手动添加，也可以从文字清单导入。", "mutedText")
         task_layout.addWidget(self.empty_state)
         actions = QHBoxLayout()
         self.edit_button = QPushButton("编辑选中")
+        self.edit_button.setObjectName("secondaryButton")
         self.edit_button.clicked.connect(self._edit_selected)
         self.delete_button = QPushButton("删除选中")
+        self.delete_button.setObjectName("secondaryButton")
         self.delete_button.clicked.connect(self._delete_selected)
         actions.addWidget(self.edit_button)
         actions.addWidget(self.delete_button)
@@ -296,6 +310,8 @@ class TodayPage(QWidget):
             QMessageBox.warning(self, "无法确认导入", str(exc))
 
     def refresh_tasks(self) -> None:
+        selected_item = self.task_table.item(self.task_table.currentRow(), 1)
+        selected_id = selected_item.data(Qt.ItemDataRole.UserRole) if selected_item else None
         if self.task_service is None:
             self._tasks = []
         else:
@@ -307,6 +323,10 @@ class TodayPage(QWidget):
         for row, task in enumerate(self._tasks):
             self.task_table.insertRow(row)
             status = QComboBox()
+            status.setObjectName("taskStatus")
+            status.setProperty("tone", task.status.value)
+            status.setAccessibleName(f"任务状态：{task.title}")
+            status.setToolTip("更改任务状态")
             status.addItem("待处理", TaskStatus.TODO)
             status.addItem("进行中", TaskStatus.DOING)
             status.addItem("已完成", TaskStatus.DONE)
@@ -315,15 +335,30 @@ class TodayPage(QWidget):
                 lambda _index, task_id=task.id, combo=status: self._set_status(task_id, combo.currentData())
             )
             self.task_table.setCellWidget(row, 0, status)
-            self.task_table.setItem(row, 1, QTableWidgetItem(task.title))
-            due_item = QTableWidgetItem(task.due_at.astimezone().strftime("%m月%d日 %H:%M") if task.due_at else "未设置")
+            title_item = QTableWidgetItem(task.title)
+            title_item.setData(Qt.ItemDataRole.UserRole, task.id)
+            title_item.setToolTip(task.title)
+            title_item.setForeground(QColor("#7A8D86" if task.status is TaskStatus.DONE else "#294540"))
+            self.task_table.setItem(row, 1, title_item)
+            due_item = QTableWidgetItem(task.due_at.astimezone().strftime("%m月%d日 %H:%M") if task.due_at else "—")
             if task.due_at:
                 due_item.setToolTip(task.due_at.isoformat(timespec="minutes"))
             self.task_table.setItem(row, 2, due_item)
-            self.task_table.setItem(row, 3, QTableWidgetItem(str(task.estimated_minutes or "—")))
+            due_item.setForeground(QColor("#74858A"))
+            estimate = QTableWidgetItem(f"{task.estimated_minutes} 分钟" if task.estimated_minutes else "—")
+            estimate.setForeground(QColor("#74858A"))
+            self.task_table.setItem(row, 3, estimate)
+            if task.id == selected_id:
+                self.task_table.setCurrentCell(row, 1)
 
     def _set_status(self, task_id: int, status: TaskStatus) -> None:
         if self.task_service is not None:
+            # Keep edit/delete targeting the task whose pill was just changed,
+            # even though the synchronous service notification rebuilds rows.
+            for row, task in enumerate(self._tasks):
+                if task.id == task_id:
+                    self.task_table.setCurrentCell(row, 1)
+                    break
             try:
                 self.task_service.set_status(task_id, status)
                 if status is TaskStatus.DONE and self.reminder_coordinator is not None:
