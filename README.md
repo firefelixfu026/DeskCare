@@ -1,5 +1,7 @@
 # DeskCare
 
+[Windows 体验版下载](https://github.com/firefelixfu026/DeskCare/releases/tag/v2.0.0-ui13) · [演示截图与介绍](docs/产品演示_UI13.md) · [商业计划书](docs/DeskCare_商业计划书_UI13.md)
+
 DeskCare 是一个 Windows 本地优先的数字健康习惯辅助与今日任务联动工具。它不是医疗诊断器、生产力评分器或全天候行为监视器。
 
 ## 当前开发阶段：UI13 检验单辅助阅读
