@@ -20,6 +20,7 @@ from deskcare.ui.companion import CompanionWindow
 from deskcare.ui.tray import build_tray_icon
 from deskcare.ui.theme import STYLE, apply_theme
 from deskcare.ui.icons import navigation_icon
+from deskcare.ui.reminder_popup import ReminderPopup
 
 
 class MainWindow(QMainWindow):
@@ -51,6 +52,8 @@ class MainWindow(QMainWindow):
         self.personalization_service = personalization_service
         self._allow_close = False
         self._shutting_down = False
+        self.reminder_popup = ReminderPopup()
+        self._desktop_event_id = None
         self.setWindowTitle("DeskCare")
         self.setWindowIcon(build_tray_icon())
         self.setMinimumSize(QSize(1040, 680))
@@ -97,7 +100,7 @@ class MainWindow(QMainWindow):
         self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation, 1)
-        version = QLabel("DeskCare · UI6")
+        version = QLabel("DeskCare · UI7")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
@@ -172,6 +175,10 @@ class MainWindow(QMainWindow):
             self.activity_collector.subscribe(lambda _result: self.reports_page.notify_data_changed())
         if self.reminder_coordinator is not None:
             self.reminder_coordinator.subscribe(lambda _snapshot: self.reports_page.notify_data_changed())
+            self.settings_page.reminder_interval_changed.connect(self.reminder_coordinator.set_interval)
+            self.reminder_popup.response_requested.connect(self.reminder_coordinator.respond)
+            self.reminder_coordinator.subscribe(self._sync_desktop_reminder)
+        self.settings_page.test_reminder_requested.connect(self._preview_reminder)
         content_layout.addWidget(self.pages)
         self.navigation.setCurrentRow(0)
         shell_layout.addWidget(sidebar)
@@ -196,6 +203,22 @@ class MainWindow(QMainWindow):
             self.companion.raise_()
         else:
             self.companion.hide()
+
+    def _preview_reminder(self) -> None:
+        if self.reminder_coordinator is not None and self.reminder_coordinator.snapshot.visible:
+            self.reminder_popup.present(show_tip=self.settings_page.activity_tips.isChecked())
+            return
+        self.reminder_popup.present(preview=True, show_tip=self.settings_page.activity_tips.isChecked())
+
+    def _sync_desktop_reminder(self, snapshot) -> None:
+        self.settings_page.reminder_status.setText(self.reminder_coordinator.status_text())
+        if not snapshot.visible:
+            if not self.reminder_popup.preview:
+                self.reminder_popup.hide()
+            return
+        if snapshot.event_id is not None and snapshot.event_id != self._desktop_event_id:
+            self._desktop_event_id = snapshot.event_id
+            self.reminder_popup.present(show_tip=self.settings_page.activity_tips.isChecked())
 
     def _sync_companion_style(self, presentation):
         combo = self.settings_page.companion_style
@@ -239,6 +262,10 @@ class MainWindow(QMainWindow):
     def _refresh_after_data_clear(self) -> None:
         if self.reminder_coordinator is not None:
             self.reminder_coordinator.reset_after_data_clear()
+        self.settings_page.reminder_interval.blockSignals(True)
+        self.settings_page.reminder_interval.setValue(40)
+        self.settings_page.reminder_interval.blockSignals(False)
+        self.config_store.config.break_candidate_minutes = 40
         self.today_page.refresh_tasks()
         self.reports_page.refresh_report()
         self.companion.hide()
@@ -265,6 +292,7 @@ class MainWindow(QMainWindow):
             return
         self._shutting_down = True
         try:
+            self.reminder_popup.hide()
             companion = getattr(self, "companion", None)
             if companion is not None:
                 companion.hide()
@@ -283,6 +311,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         if self._allow_close:
             self.shutdown_background_work()
+            self.reminder_popup.close()
             event.accept()
             return
         tray = getattr(self, "tray_controller", None)

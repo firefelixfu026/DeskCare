@@ -63,6 +63,9 @@ class ActivityCollector:
         self._previous: ActivitySample | None = None
         self._recent_switch = False
         self.continuous_active_seconds = 0.0
+        # Reminder budget is separate from continuous activity statistics.
+        # Brief input gaps preserve, but do not add to, this active-time budget.
+        self.reminder_elapsed_seconds: float | None = None
         self._listeners: list[Callable[[PollResult], None]] = []
         self.last_result = PollResult(False, reason="not_sampled")
         controller.subscribe(self._on_controller_state)
@@ -92,6 +95,10 @@ class ActivityCollector:
         self._previous = None
         self._recent_switch = False
         self.continuous_active_seconds = 0.0
+        self.reminder_elapsed_seconds = 0.0
+
+    def reset_reminder_interval(self) -> None:
+        self.reminder_elapsed_seconds = 0.0
 
     @property
     def latest_sample(self) -> ActivitySample | None:
@@ -141,24 +148,34 @@ class ActivityCollector:
         if not sample.observation_ok:
             self._previous = sample
             self.continuous_active_seconds = 0.0
+            self.reset_reminder_interval()
             return self._finish(PollResult(True, reason="observation_unavailable"))
         previous = self._previous
         self._previous = sample
         if previous is None:
             self.continuous_active_seconds = 0.0
+            self.reset_reminder_interval()
             return self._finish(PollResult(True, reason="session_started"))
         elapsed = sample.monotonic_s - previous.monotonic_s
         if elapsed <= 0:
             self.continuous_active_seconds = 0.0
+            self.reset_reminder_interval()
             return self._finish(PollResult(True, reason="non_monotonic_sample"))
         if elapsed > self.max_interval_s:
             self.continuous_active_seconds = 0.0
+            self.reset_reminder_interval()
             return self._finish(PollResult(True, discarded_gap_seconds=elapsed, reason="long_gap"))
 
         if previous.state is ActivityKind.ACTIVE and sample.state is ActivityKind.ACTIVE:
             self.continuous_active_seconds += elapsed
         else:
             self.continuous_active_seconds = 0.0
+
+        if (not previous.observation_ok or previous.state is ActivityKind.UNKNOWN
+                or sample.state is ActivityKind.UNKNOWN or (sample.idle_s or 0) >= 300):
+            self.reset_reminder_interval()
+        elif previous.state is ActivityKind.ACTIVE and sample.state is ActivityKind.ACTIVE:
+            self.reminder_elapsed_seconds = (self.reminder_elapsed_seconds or 0.0) + elapsed
 
         if previous.state is ActivityKind.ACTIVE:
             category = previous.app_category or "UNKNOWN"

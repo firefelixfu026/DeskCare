@@ -63,7 +63,7 @@ def main():
         window.show()
         for name, nav, section in (("today", 0, None), ("usage", 1, 0), ("apps", 1, 1),
                                    ("status", 2, None), ("report", 3, None),
-                                   ("settings", 4, 0), ("settings-privacy", 4, 3)):
+                                   ("settings", 4, 0), ("settings-reminders", 4, 1), ("settings-privacy", 4, 3)):
             window.navigation.setCurrentRow(nav)
             if nav == 1:
                 window.usage_page.sections.setCurrentIndex(section)
@@ -75,6 +75,10 @@ def main():
             app.processEvents()
             if not window.grab().save(str(args.output / f"{name}.png")):
                 raise RuntimeError("Could not write preview")
+        window._preview_reminder()
+        app.processEvents()
+        window.reminder_popup.grab().save(str(args.output / "reminder-preview.png"))
+        window.reminder_popup.hide()
         window.navigation.setCurrentRow(0)
         status_control = window.today_page.task_table.cellWidget(0, 0)
         status_control.showPopup()
@@ -113,7 +117,7 @@ def main():
         window._allow_close = True
         window.close()
         gc.collect()
-    print(f"Rendered eighteen fictional-data previews to {args.output}")
+    print(f"Rendered twenty fictional-data previews to {args.output}")
 
 
 if __name__ == "__main__":

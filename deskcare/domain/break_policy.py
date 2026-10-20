@@ -97,14 +97,17 @@ def decide(
             "你刚处理过提醒，先给你留出时间。",
             60,
         )
-    if context.continuous_active_minutes < config.break_candidate_minutes:
+    elapsed_minutes = (context.continuous_active_minutes if context.reminder_elapsed_minutes is None
+                       else context.reminder_elapsed_minutes)
+    if elapsed_minutes < config.break_candidate_minutes:
         return _decision(
             BreakAction.NONE,
             "BELOW_THRESHOLD",
-            "当前连续活跃估计尚未达到可配置的提醒阈值。",
+            "累计活跃时间尚未达到你设置的提醒间隔。",
             60,
         )
-    if _deadline_is_imminent(context, config) or context.mode == "focus":
+    delay_limit = config.break_candidate_minutes + config.max_soft_delay_minutes
+    if (_deadline_is_imminent(context, config) or context.mode == "focus") and elapsed_minutes < delay_limit:
         return _decision(
             BreakAction.DEFER,
             "SCHEDULE_OR_FOCUS_CONSTRAINT",
@@ -115,16 +118,14 @@ def decide(
         return _decision(
             BreakAction.SOFT_NOTIFY,
             "POSSIBLE_NATURAL_GAP",
-            "连续活跃估计已达到阈值，且出现了一个可能的自然间隙。",
+            "已到你设置的提醒时间，刚好出现了一个可能的空档。",
             300,
         )
-    if context.continuous_active_minutes >= (
-        config.break_candidate_minutes + config.max_soft_delay_minutes
-    ):
+    if elapsed_minutes >= delay_limit:
         return _decision(
             BreakAction.SOFT_NOTIFY,
             "SOFT_DELAY_LIMIT_REACHED",
-            "连续活跃估计已超过候选阈值，提供一个始终可关闭的轻量提醒。",
+            "已到提醒时间，也稍等了一会儿；如果方便，可以短暂休息一下。",
             300,
         )
     return _decision(

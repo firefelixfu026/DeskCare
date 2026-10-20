@@ -9,9 +9,11 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import ssl
 from ctypes import wintypes
 from dataclasses import dataclass
 from urllib.parse import urlparse
+from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from deskcare.ai.optional_local_llm import LocalLLMClient, LocalModelError, _json_content
@@ -36,6 +38,23 @@ class UnavailableCredentialStore:
 class _RejectRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
+
+
+def normalize_cloud_endpoint(endpoint: str) -> str:
+    """Accept DeepSeek's documented base URL without changing the host."""
+    cleaned = endpoint.strip()
+    parsed = urlparse(cleaned)
+    try:
+        port = parsed.port
+    except ValueError:
+        return cleaned
+    if (parsed.scheme == "https" and parsed.hostname == "api.deepseek.com"
+            and not parsed.username and not parsed.password and not parsed.query
+            and not parsed.fragment and port in (None, 443)):
+        path = parsed.path.rstrip("/")
+        if path in {"", "/v1"}:
+            return parsed._replace(path=path + "/chat/completions").geturl()
+    return cleaned
 
 
 @dataclass(frozen=True)
@@ -146,7 +165,9 @@ class CloudTaskAssistant:
                 self.credentials = UnavailableCredentialStore()
         self._request_fn = request_fn or build_opener(_RejectRedirects()).open
         self.enabled = repository.get_consent(self.CONSENT_SCOPE) is True
-        self.endpoint = repository.get_setting(self.ENDPOINT_SETTING, self.DEFAULT_ENDPOINT) or self.DEFAULT_ENDPOINT
+        self.endpoint = normalize_cloud_endpoint(
+            repository.get_setting(self.ENDPOINT_SETTING, self.DEFAULT_ENDPOINT) or self.DEFAULT_ENDPOINT
+        )
         self.model = repository.get_setting(self.MODEL_SETTING, "") or ""
 
     @property
@@ -170,7 +191,7 @@ class CloudTaskAssistant:
         clean_model = model.strip()
         if not clean_model or len(clean_model) > 120:
             raise ValueError("请填写 1–120 个字符的模型名称。")
-        self.endpoint = endpoint.strip()
+        self.endpoint = normalize_cloud_endpoint(endpoint)
         self.model = clean_model
         self.repository.set_setting(self.ENDPOINT_SETTING, self.endpoint)
         self.repository.set_setting(self.MODEL_SETTING, self.model)
@@ -212,6 +233,11 @@ class CloudTaskAssistant:
                 {"role": "user", "content": text},
             ],
         }
+        if urlparse(self.endpoint).hostname == "api.deepseek.com":
+            # Task extraction does not require reasoning mode. These parameters
+            # are part of the exact body shown for per-request confirmation.
+            payload["thinking"] = {"type": "disabled"}
+            payload["max_tokens"] = 4096
         return CloudTaskRequest(self.endpoint, self.model, filename, text,
                                 json.dumps(payload, ensure_ascii=False).encode("utf-8"))
 
@@ -230,18 +256,46 @@ class CloudTaskAssistant:
             "Content-Type": "application/json", "Authorization": f"Bearer {key}"
         })
         try:
-            response = self._request_fn(http_request, timeout=20)
+            timeout = 60 if urlparse(request.endpoint).hostname == "api.deepseek.com" else 20
+            response = self._request_fn(http_request, timeout=timeout)
             try:
                 envelope = json.loads(response.read().decode("utf-8"))
             finally:
                 if hasattr(response, "close"):
                     response.close()
-            content = envelope["choices"][0]["message"]["content"]
+            choice = envelope["choices"][0]
+            if choice.get("finish_reason") == "length":
+                raise CloudAIError("AI 回复超出长度限制，请分成较短清单重试；原草稿未改变。")
+            content = choice["message"]["content"]
             if not isinstance(content, str):
                 raise ValueError("response content was not text")
             parsed = _json_content(content)
             return LocalLLMClient._to_import_result(parsed, request.user_text, request.filename)
-        except LocalModelError as exc:
+        except CloudAIError:
+            raise
+        except HTTPError as exc:
+            code = exc.code
+            exc.close()
+            messages = {
+                400: "服务商不接受当前请求格式或模型参数",
+                401: "服务密钥无效或已失效，请在设置中重新输入",
+                402: "服务账户余额不足，请在服务商平台查看",
+                403: "服务商拒绝访问，请检查账户权限",
+                404: "接口路径或模型名称不存在，请核对服务地址和模型名",
+                429: "请求过于频繁或额度受限，请稍后再试",
+            }
+            detail = messages.get(code, "服务商暂时无法处理请求" if code >= 500 else "请求未被接受")
+            raise CloudAIError(f"{detail}（HTTP {code}）；原草稿未改变。") from None
+        except (TimeoutError, ssl.SSLError, URLError) as exc:
+            reason = exc.reason if isinstance(exc, URLError) else exc
+            if isinstance(reason, ssl.SSLError):
+                detail = "加密连接失败，请检查代理和系统证书；不要关闭证书验证"
+            elif isinstance(reason, TimeoutError):
+                detail = "等待 AI 回复超时，请稍后重试或缩短清单"
+            else:
+                detail = "无法连接 AI 服务，请检查网络、代理及服务地址"
+            raise CloudAIError(detail + "；原草稿未改变。") from None
+        except (LocalModelError, ValueError, KeyError, IndexError, TypeError) as exc:
             raise CloudAIError("云端返回内容未通过 JSON/任务字段校验；保留原有草稿。") from exc
         except Exception as exc:
             # Do not expose provider error bodies, URL query strings, or secrets.

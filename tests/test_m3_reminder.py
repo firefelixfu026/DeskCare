@@ -80,7 +80,8 @@ def test_coordinator_accepts_user_entered_naive_deadline(tmp_path):
     now = datetime.now().astimezone().replace(second=0, microsecond=0)
     repository.add_task("临近截止任务", (now + timedelta(minutes=5)).replace(tzinfo=None))
     collector._previous = _active_sample(now)
-    collector.continuous_active_seconds = 45 * 60
+    # Check within the new five-minute soft-delay window, not at its upper bound.
+    collector.continuous_active_seconds = 42 * 60
 
     snapshot = coordinator.evaluate(now=now, is_recent_switch=True)
 

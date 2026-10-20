@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
+import math
 from datetime import datetime, timedelta
 
-from deskcare.domain.break_policy import BreakPolicy
+from deskcare.domain.break_policy import BreakPolicy, BreakPolicyConfig
 from deskcare.domain.types import BreakAction, PolicyContext, PolicyDecision
 from deskcare.services.activity_service import ActivityCollector
 from deskcare.services.consent_service import MonitoringController
@@ -49,6 +50,9 @@ def decision_context_summary(context: dict[str, object]) -> str:
     active = context.get("continuous_active_minutes")
     if isinstance(active, (int, float)):
         parts.append(f"连续活跃估计约 {active:g} 分钟")
+    elapsed = context.get("reminder_elapsed_minutes")
+    if isinstance(elapsed, (int, float)):
+        parts.append(f"本轮累计活跃约 {elapsed:g} 分钟")
     if context.get("observation_state") == "active":
         parts.append("最近有键鼠活动")
     if context.get("recent_switch"):
@@ -86,9 +90,14 @@ class ReminderCoordinator:
         self.collector = collector
         self.task_service = task_service
         self.repository = repository
-        self.policy = policy or BreakPolicy()
+        self.policy = policy or BreakPolicy(BreakPolicyConfig(
+            break_candidate_minutes=self.saved_interval(repository), max_soft_delay_minutes=5,
+        ))
         self.personalization_service = personalization_service
         self.mode = "normal"
+        if personalization_service is not None:
+            personalization_service.base_candidate_minutes = self.policy.config.break_candidate_minutes
+            personalization_service.refresh(self.mode)
         self._listeners: list[Callable[[ReminderSnapshot], None]] = []
         self._active_event_id: int | None = None
         self._last_prompt_at: datetime | None = None
@@ -101,6 +110,54 @@ class ReminderCoordinator:
         )
         self._restore_latest_event()
         controller.subscribe(self._on_controller_state)
+
+    @staticmethod
+    def saved_interval(repository) -> int:
+        try:
+            value = int(repository.get_setting("reminder_interval_minutes", "40"))
+        except (ValueError, TypeError):
+            return 40
+        return value if 5 <= value <= 180 else 40
+
+    def set_interval(self, minutes: int) -> None:
+        if isinstance(minutes, bool) or not isinstance(minutes, int) or not 5 <= minutes <= 180:
+            raise ValueError("提醒间隔应为 5–180 分钟。")
+        self.repository.set_setting("reminder_interval_minutes", str(minutes))
+        self.policy.config = replace(self.policy.config, break_candidate_minutes=minutes)
+        if self.personalization_service is not None:
+            self.personalization_service.base_candidate_minutes = minutes
+            self.personalization_service.refresh(self.mode)
+        self._notify()
+
+    @property
+    def elapsed_minutes(self) -> float:
+        elapsed = self.collector.reminder_elapsed_seconds
+        return (self.collector.continuous_active_seconds if elapsed is None else elapsed) / 60
+
+    def status_text(self) -> str:
+        if not self.controller.enabled:
+            return "开启电脑使用统计后，自动提醒才会开始。"
+        if self.controller.paused:
+            return "已暂停，不会自动提醒。"
+        if self.mode in {"meeting", "quiet"}:
+            return "会议或安静模式中，暂不提醒。"
+        if self.snapshot.visible:
+            return "有一条休息提醒，处理后继续计时。"
+        reason = self.snapshot.decision.reason_codes[0]
+        if reason in {"CONSENT_OR_PAUSE", "NOT_EVALUATED", "OBSERVATION_UNKNOWN"}:
+            return "等待可用的电脑活动信号。"
+        if reason == "INPUT_IDLE_NOT_PROVEN_BREAK":
+            return "最近没有键鼠操作，等你继续使用时再提醒。"
+        if reason == "COOLDOWN":
+            return "稍后再提醒，暂时不打扰。"
+        if reason == "SCHEDULE_OR_FOCUS_CONSTRAINT":
+            return "专注或临近任务截止，稍晚再提醒。"
+        target = self.policy.config.break_candidate_minutes
+        if self.personalization_service is not None:
+            target = self.personalization_service.effective_config(self.policy.config, self.mode).break_candidate_minutes
+        remaining = max(0, math.ceil(target - self.elapsed_minutes))
+        return (f"再累计使用约 {remaining} 分钟后择机提醒。" if remaining
+                else "已到提醒时间，正在等一个合适的间隙。")
 
     def subscribe(self, listener: Callable[[ReminderSnapshot], None]) -> None:
         self._listeners.append(listener)
@@ -180,6 +237,9 @@ class ReminderCoordinator:
         self._last_response = None
         self._postpone_until = None
         self._just_confirmed_task_done = False
+        self.policy.config = replace(self.policy.config, break_candidate_minutes=40)
+        if self.personalization_service is not None:
+            self.personalization_service.base_candidate_minutes = 40
         if self.personalization_service is not None:
             self.personalization_service.refresh(self.mode)
         self.snapshot = ReminderSnapshot(
@@ -217,6 +277,7 @@ class ReminderCoordinator:
             just_confirmed_task_done=self._just_confirmed_task_done,
             postpone_until=self._postpone_until,
             last_feedback_at=self._last_feedback_at,
+            reminder_elapsed_minutes=self.elapsed_minutes,
         )
         if self.personalization_service is not None:
             from deskcare.domain.break_policy import decide
@@ -227,7 +288,7 @@ class ReminderCoordinator:
             config = self.policy.config
             decision = self.policy.decide(context)
         self._just_confirmed_task_done = False
-        if decision.action is BreakAction.SOFT_NOTIFY:
+        if decision.action is BreakAction.SOFT_NOTIFY and self._active_event_id is None:
             decision_context = {
                 "rule_set": "break_policy_v1",
                 "mode": context.mode,
@@ -246,6 +307,7 @@ class ReminderCoordinator:
                 "continuous_active_minutes": round(
                     context.continuous_active_minutes, 1
                 ),
+                "reminder_elapsed_minutes": round(self.elapsed_minutes, 1),
                 "recent_switch": context.is_recent_switch,
                 "task_marked_done": context.just_confirmed_task_done,
                 "confirmed_deadline_seconds_remaining": (
@@ -306,6 +368,8 @@ class ReminderCoordinator:
         self._last_feedback_at = current
         self._last_response = response
         self._postpone_until = self._postpone_for(response, current)
+        if response in {"BREAK_NOW", "SKIP"}:
+            self.collector.reset_reminder_interval()
         if self.personalization_service is not None:
             self.personalization_service.refresh(self.mode)
         self._active_event_id = None

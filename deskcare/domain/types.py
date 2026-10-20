@@ -100,6 +100,7 @@ class PolicyContext:
     just_confirmed_task_done: bool = False
     postpone_until: datetime | None = None
     last_feedback_at: datetime | None = None
+    reminder_elapsed_minutes: float | None = None
 
 
 @dataclass(frozen=True)

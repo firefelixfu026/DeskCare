@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import sys
+from types import CodeType
 from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,6 +66,16 @@ def main() -> None:
     assert not destination.exists(), "Destination already exists; choose a new name to preserve it"
     executable = ROOT / f"dist/{PREFIX}/{PREFIX}.exe"
     assert hashlib.sha256(executable.read_bytes()).hexdigest().upper() == "F4009AD275606C943C066FA7B5459F1941AEF95BBEE7A69990EA1B3B39344582"
+    # This script packages a frozen UI6 snapshot, not newer working sources.
+    # Refuse to silently mix an old executable with the UI7 source tree.
+    from PyInstaller.archive.readers import CArchiveReader
+    def shape(code):
+        return (code.co_code, code.co_names, code.co_varnames, code.co_flags,
+                tuple(shape(value) if isinstance(value, CodeType) else value for value in code.co_consts))
+    embedded = CArchiveReader(str(executable)).open_embedded_archive("PYZ.pyz")
+    assert shape(embedded.extract("deskcare.app")) == shape(compile(
+        (ROOT / "deskcare/app.py").read_bytes(), "deskcare.app", "exec"
+    )), "UI6 packager requires matching frozen UI6 sources; do not mix UI7 sources with UI6 EXE"
     assert (executable.parent / "_internal/PySide6/Qt6Core.dll").is_file()
     destination.mkdir(parents=True)
 

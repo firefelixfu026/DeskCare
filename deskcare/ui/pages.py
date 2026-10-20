@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QLayout,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
@@ -36,6 +37,7 @@ from deskcare.services.bodylog_service import BodyLogService
 from deskcare.services.reminder_service import (
     REMINDER_RESPONSES,
     ReminderSnapshot,
+    ReminderCoordinator,
     decision_context_summary,
 )
 from deskcare.services.report_engine import LocalReportService, ReportPeriod
@@ -883,6 +885,8 @@ class SettingsPage(QWidget):
     all_data_cleared = Signal()
     companion_visibility_changed = Signal(bool)
     companion_style_changed = Signal(str)
+    reminder_interval_changed = Signal(int)
+    test_reminder_requested = Signal()
 
     def __init__(self, config_store, controller, collector=None, bodylog_service=None, local_ai_service=None, personalization_service=None, repository=None, cloud_ai_service=None, parent=None) -> None:
         super().__init__(parent)
@@ -970,6 +974,33 @@ class SettingsPage(QWidget):
         root.setContentsMargins(4, 8, 4, 12)
         root.setSpacing(14)
         self.sections.addTab(reminders, "提醒与状态")
+        timing = QFrame()
+        timing.setObjectName("card")
+        timing_layout = QVBoxLayout(timing)
+        timing_layout.setContentsMargins(16, 14, 16, 14)
+        timing_layout.setSpacing(12)
+        timing_layout.addWidget(label("休息提醒", "cardTitle"))
+        interval_row = QHBoxLayout()
+        interval_row.addWidget(QLabel("大约多久提醒一次"))
+        self.reminder_interval = QSpinBox()
+        self.reminder_interval.setRange(5, 180)
+        self.reminder_interval.setSingleStep(5)
+        self.reminder_interval.setSuffix(" 分钟")
+        self.reminder_interval.setFixedWidth(140)
+        self.reminder_interval.setValue(ReminderCoordinator.saved_interval(self.repository) if self.repository else 40)
+        self.reminder_interval.setKeyboardTracking(False)
+        self.reminder_interval.setEnabled(self.repository is not None)
+        self.reminder_interval.valueChanged.connect(self._change_reminder_interval)
+        interval_row.addWidget(self.reminder_interval)
+        interval_row.addStretch()
+        self.test_reminder = QPushButton("试一下提醒")
+        self.test_reminder.clicked.connect(lambda _checked=False: self.test_reminder_requested.emit())
+        interval_row.addWidget(self.test_reminder)
+        timing_layout.addLayout(interval_row)
+        timing_layout.addWidget(label("按累计活跃时间择机提醒；短暂停顿不清零。会议和安静模式不打扰。", "mutedText"))
+        self.reminder_status = label("开启电脑使用统计后，自动提醒才会开始。", "mutedText")
+        timing_layout.addWidget(self.reminder_status)
+        root.addWidget(timing)
         self.activity_tips = QCheckBox("休息提醒中显示轻柔、可跳过的活动建议")
         self.activity_tips.setChecked(
             collector.repository.get_setting("activity_tips_enabled", "true") == "true"
@@ -1398,6 +1429,12 @@ class SettingsPage(QWidget):
             self.local_ai_config_feedback.setText(
                 f"服务已连接并发现 {len(models)} 个模型（{preview}{suffix}），但当前配置模型 {configured_model or '未填写'} 不在列表中。"
             )
+
+    def _change_reminder_interval(self, minutes: int) -> None:
+        if self.repository is not None:
+            self.repository.set_setting("reminder_interval_minutes", str(minutes))
+        self.config_store.config.break_candidate_minutes = minutes
+        self.reminder_interval_changed.emit(minutes)
 
     def _on_local_ai_probe_thread_finished(self) -> None:
         self._local_ai_probe_thread = None
