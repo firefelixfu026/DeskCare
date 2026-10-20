@@ -11,9 +11,10 @@ import json
 import os
 from pathlib import Path
 import subprocess
-from urllib.error import HTTPError
+import time
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.request import Request, build_opener, HTTPRedirectHandler
 from scripts.package_submission import check_file
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,13 +45,27 @@ class GitHub:
                    "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "DeskCare-release"}
         if body is not None:
             headers["Content-Type"] = content_type or "application/json"
-        try:
-            with urlopen(Request(url, data=body, headers=headers, method=method), timeout=120) as response:
-                return json.load(response)
-        except HTTPError as exc:
-            if optional and exc.code == 404:
+        class NoRedirect(HTTPRedirectHandler):
+            def redirect_request(self, *args, **kwargs):
                 return None
-            raise RuntimeError(f"GitHub API HTTP {exc.code}; no credential or response body logged") from None
+        # Object writes are content-addressed and safe to resume. Release/asset
+        # creation is not automatically repeated after an uncertain response.
+        attempts = 3 if method == "GET" or suffix.startswith("/git/") else 1
+        for attempt in range(attempts):
+            try:
+                with build_opener(NoRedirect()).open(Request(url, data=body, headers=headers, method=method), timeout=120) as response:
+                    return json.load(response)
+            except HTTPError as exc:
+                if optional and exc.code == 404:
+                    return None
+                if exc.code in {502, 503, 504} and attempt+1 < attempts:
+                    time.sleep(attempt+1)
+                    continue
+                raise RuntimeError(f"GitHub API HTTP {exc.code}; no credential or response body logged") from None
+            except (URLError, TimeoutError, ConnectionError):
+                if attempt+1 == attempts:
+                    raise RuntimeError("GitHub network interrupted; safe to resume identical Git objects") from None
+                time.sleep(attempt+1)
 
 
 def identity(value):
@@ -73,6 +88,10 @@ def publish_history(api, remote_sha, local_sha):
     commits = git("rev-list", "--reverse", "--topo-order", f"{remote_sha}..{local_sha}").decode().splitlines()
     for number, sha in enumerate(commits, 1):
         records = git("ls-tree", "-r", "--full-tree", "-z", sha).split(b"\0")
+        if api.call("GET", "/git/commits/" + sha, optional=True) is not None:
+            known.update(record.split(b"\t", 1)[0].decode().split()[2] for record in records if record)
+            print(f"Reused commit {number}/{len(commits)} {sha[:8]}", flush=True)
+            continue
         tree = []
         for record in records:
             if not record:
@@ -117,6 +136,7 @@ def publish_history(api, remote_sha, local_sha):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--push", action="store_true")
+    parser.add_argument("--committed-only", action="store_true", help="Publish HEAD objects only while unrelated presentation artifacts are being prepared")
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--tag", default="v2.0.0-ui13")
     parser.add_argument("--asset", action="append", type=Path, default=[])
@@ -128,7 +148,7 @@ def main():
     print(json.dumps({"repository": repo["html_url"], "visibility": repo["visibility"], "remote": remote_sha,
                       "local": local_sha, "can_push": repo.get("permissions", {}).get("push", False)}), flush=True)
     if args.push:
-        if git("status", "--porcelain").strip():
+        if git("status", "--porcelain").strip() and not args.committed_only:
             raise RuntimeError("Commit reviewed changes before publishing")
         publish_history(api, remote_sha, local_sha)
     if args.release:
