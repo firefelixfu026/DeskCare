@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from dataclasses import replace
+import re
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
@@ -24,6 +28,7 @@ from PySide6.QtWidgets import (
 from deskcare.domain.types import Task, TaskDraft
 from deskcare.importers.base import ImportResult, duplicate_issues, validate_title
 from deskcare.ui.theme import STYLE
+from deskcare.importers.task_times import split_task_time, task_time_text, clock_at
 
 
 class _TaskAIWorker(QObject):
@@ -70,18 +75,41 @@ class TaskFormDialog(QDialog):
         self.setStyleSheet(STYLE)
         self.setWindowTitle("编辑任务" if task else "添加任务")
         self.setMinimumWidth(460)
+        self._task = task
         self.title_edit = QLineEdit(task.title if task else "")
         self.title_edit.setPlaceholderText("例如：完成编程练习")
         self.due_edit = QLineEdit(task.due_at.isoformat(timespec="minutes") if task and task.due_at else "")
-        self.due_edit.setPlaceholderText(f"可选：{date.today():%Y-%m-%d} 18:00")
+        self.due_edit.setPlaceholderText("可选：23:00，或完整日期时间")
         self.estimate = QSpinBox()
         self.estimate.setRange(0, 1440)
         self.estimate.setSpecialValueText("未设置")
         self.estimate.setValue(task.estimated_minutes or 0 if task else 0)
+        day = (task.planned_for or (task.starts_at.date() if task.starts_at else None)
+               or (task.due_at.date() if task.due_at else None)) if task else date.today()
+        self.planned_edit = QLineEdit(day.isoformat() if day else "")
+        self.planned_edit.setPlaceholderText("YYYY-MM-DD；留空为今天")
+        self.start_edit = QLineEdit(task.starts_at.strftime("%H:%M") if task and task.starts_at and task.starts_at.date() == day
+                                   else task.starts_at.isoformat(timespec="minutes") if task and task.starts_at else "")
+        self.end_edit = QLineEdit(task.ends_at.strftime("%H:%M") if task and task.ends_at and task.ends_at.date() == day
+                                 else task.ends_at.isoformat(timespec="minutes") if task and task.ends_at else "")
+        self.start_edit.setPlaceholderText("开始，如 19:00")
+        self.end_edit.setPlaceholderText("结束，如 20:00")
+        time_row = QHBoxLayout()
+        time_row.addWidget(self.start_edit)
+        time_row.addWidget(self.end_edit)
+        self.notes_edit = QPlainTextEdit(task.notes if task else "")
+        self.notes_edit.setPlaceholderText("写下你自己的备注，右键任务也可以查看或修改")
+        self.notes_edit.setMaximumHeight(90)
+        self.time_hint_edit = QLineEdit(task.time_hint if task else "")
+        self.time_hint_edit.setPlaceholderText("例如：暂定下午；不确定的时间可保留在这里")
         form = QFormLayout()
         form.addRow("标题", self.title_edit)
+        form.addRow("安排日期", self.planned_edit)
         form.addRow("截止时间", self.due_edit)
+        form.addRow("活动时段（可选）", time_row)
         form.addRow("预计用时（分钟）", self.estimate)
+        form.addRow("时间说明", self.time_hint_edit)
+        form.addRow("备注", self.notes_edit)
         self.error = QLabel()
         self.error.setWordWrap(True)
         self.error.setStyleSheet("color: #B44A42;")
@@ -101,16 +129,51 @@ class TaskFormDialog(QDialog):
     def _accept(self) -> None:
         title = " ".join(self.title_edit.text().split())
         issue = validate_title(title)
-        due, due_error = _parse_due(self.due_edit.text())
+        due, due_error = self._read_due()
+        try:
+            self.details()
+        except ValueError as exc:
+            self.error.setText(str(exc))
+            return
         if issue or due_error:
             self.error.setText(issue.message if issue else due_error or "输入有误。")
             return
         self.accept()
 
     def values(self) -> tuple[str, datetime | None, int | None]:
-        due, _ = _parse_due(self.due_edit.text())
+        due, _ = self._read_due()
         minutes = self.estimate.value() or None
         return " ".join(self.title_edit.text().split()), due, minutes
+
+    def _read_due(self):
+        value = self.due_edit.text().strip()
+        if re.fullmatch(r"\d{1,2}:\d{2}", value):
+            try:
+                day = date.fromisoformat(self.planned_edit.text()) if self.planned_edit.text() else date.today()
+                return clock_at(value, day), None
+            except ValueError:
+                return None, "请填写有效日期与钟点。"
+        return _parse_due(value)
+
+    def details(self) -> dict:
+        day = date.fromisoformat(self.planned_edit.text().strip()) if self.planned_edit.text().strip() else date.today()
+        def parsed(value, base_day):
+            value = value.strip()
+            return (datetime.fromisoformat(value) if "T" in value or " " in value else clock_at(value, base_day)) if value else None
+        start = parsed(self.start_edit.text(), day)
+        end = parsed(self.end_edit.text(), start.date() if start else day)
+        if start and end and start.tzinfo is not None and end.tzinfo is None:
+            end = end.astimezone()
+        if start and end and start.tzinfo is None and end.tzinfo is not None:
+            start = start.astimezone()
+        if end and not start:
+            raise ValueError("请同时填写开始时间。")
+        if start and end and end < start:
+            end += timedelta(days=1)
+        return dict(planned_for=day, starts_at=start, ends_at=end,
+                    notes=self.notes_edit.toPlainText(), time_hint=self.time_hint_edit.text(),
+                    estimate_is_suggestion=bool(self._task and self._task.estimate_is_suggestion
+                                              and self.estimate.value() == self._task.estimated_minutes))
 
 
 class ImportPreviewDialog(QDialog):
@@ -130,9 +193,14 @@ class ImportPreviewDialog(QDialog):
         self._ai_worker: _TaskAIWorker | None = None
         self.setWindowTitle(f"预览导入：{result.source_name}")
         self.setMinimumSize(820, 520)
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["任务（可编辑）", "截止时间（可编辑）", "预计用时", "备注"])
-        self.table.horizontalHeader().setStretchLastSection(True)
+        self.resize(1100, 650)
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["任务", "日期", "时间（截止/时段）", "预计分钟", "我的备注"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        for col, width in ((1, 125), (2, 185), (3, 100)):
+            self.table.setColumnWidth(col, width)
+        self.table.verticalHeader().setDefaultSectionSize(45)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         for draft in result.drafts:
             self._append_draft(draft)
@@ -240,6 +308,8 @@ class ImportPreviewDialog(QDialog):
         thread.finished.connect(thread.deleteLater)
         self._ai_thread = thread
         self._ai_worker = worker
+        self._notes_before_ai = {draft.title: draft.notes for draft in self._drafts_from_table()[0] if draft.notes}
+        self.table.setEnabled(False)
         self.ai_button.setEnabled(False)
         self.cloud_button.setEnabled(False)
         self.ai_button.setText(busy_text)
@@ -256,9 +326,11 @@ class ImportPreviewDialog(QDialog):
             self.issue_label.setText(f"{message} 当前规则草稿仍可编辑或确认。")
             return
         self.import_result = result
+        self.table.blockSignals(True)
         self.table.setRowCount(0)
         for draft in result.drafts:
-            self._append_draft(draft)
+            self._append_draft(replace(draft, notes=getattr(self, "_notes_before_ai", {}).get(draft.title, draft.notes)))
+        self.table.blockSignals(False)
         self._show_issues(result.issues)
         self._refresh_validation()
 
@@ -266,6 +338,7 @@ class ImportPreviewDialog(QDialog):
     def _on_ai_thread_finished(self) -> None:
         self._ai_thread = None
         self._ai_worker = None
+        self.table.setEnabled(True)
         self.ai_button.setText("本机 AI 帮我整理")
         self.ai_button.setEnabled(self._ai_parser is not None)
         self.cloud_button.setEnabled(self._cloud_request_factory is not None and self._cloud_parser is not None)
@@ -281,11 +354,21 @@ class ImportPreviewDialog(QDialog):
         row = self.table.rowCount()
         self.table.insertRow(row)
         self.table.setItem(row, 0, QTableWidgetItem(draft.title))
-        self.table.setItem(row, 1, QTableWidgetItem(draft.due_at.isoformat(timespec="minutes") if draft.due_at else ""))
-        self.table.setItem(row, 2, QTableWidgetItem(str(draft.estimated_minutes or "")))
-        notes = ", ".join(draft.uncertainty) or "规则解析；请核对"
-        self.table.setItem(row, 3, QTableWidgetItem(notes))
-        self.table.item(row, 3).setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+        self.table.item(row, 0).setData(Qt.ItemDataRole.UserRole, draft)
+        day = draft.planned_for or (draft.due_at.date() if draft.due_at else None)
+        self.table.setItem(row, 1, QTableWidgetItem(day.isoformat() if day else ""))
+        self.table.setItem(row, 2, QTableWidgetItem(task_time_text(draft)))
+        self.table.setItem(row, 3, QTableWidgetItem(str(draft.estimated_minutes or "")))
+        self.table.setItem(row, 4, QTableWidgetItem(draft.notes))
+        if draft.estimate_is_suggestion:
+            self.table.item(row, 3).setToolTip("AI 预计用时，仅供参考；可直接修改，确认后才保存。")
+            self.table.item(row, 3).setForeground(QColor("#936D32"))
+        hints = []
+        if "year_assumed" in draft.uncertainty:
+            hints.append("原文未写年份，日期按本年显示；请核对。")
+        if draft.time_hint:
+            hints.append("时间说明：" + draft.time_hint)
+        self.table.item(row, 0).setToolTip("\n".join([draft.title] + hints))
 
     def _show_issues(self, issues) -> None:
         if not issues:
@@ -314,8 +397,14 @@ class ImportPreviewDialog(QDialog):
             # user input instead of raising inside the signal callback.
             title = cell_text(row, 0).strip()
             title_issue = validate_title(title, row + 1)
-            due, due_error = _parse_due(cell_text(row, 1))
-            raw_minutes = cell_text(row, 2).strip()
+            try:
+                planned = date.fromisoformat(cell_text(row, 1)) if cell_text(row, 1).strip() else None
+                timing = split_task_time("任务 (" + cell_text(row, 2) + ")", planned, date.today())
+                due, due_error = timing.due_at, None
+            except ValueError:
+                timing = TaskDraft(title)
+                planned, due, due_error = None, None, "任务日期应为 YYYY-MM-DD。"
+            raw_minutes = cell_text(row, 3).strip()
             minutes = None
             if raw_minutes:
                 try:
@@ -332,10 +421,13 @@ class ImportPreviewDialog(QDialog):
                 continue
             if title_issue or due_error or (raw_minutes and minutes is None):
                 continue
-            notes = tuple(
-                note for note in cell_text(row, 3).split(", ") if note and note != "规则解析；请核对"
-            )
-            drafts.append(TaskDraft(title, due, minutes, row + 1, notes))
+            original = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            drafts.append(TaskDraft(title, due, minutes, row + 1,
+                original.uncertainty if isinstance(original, TaskDraft) else (),
+                planned_for=planned, starts_at=timing.starts_at, ends_at=timing.ends_at,
+                notes=cell_text(row, 4), time_hint=timing.time_hint,
+                estimate_is_suggestion=bool(isinstance(original, TaskDraft) and original.estimate_is_suggestion
+                                           and minutes == original.estimated_minutes)))
         errors.extend(issue.message for issue in duplicate_issues(drafts))
         return drafts, errors
 

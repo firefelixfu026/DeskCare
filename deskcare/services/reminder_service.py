@@ -92,6 +92,7 @@ class ReminderCoordinator:
         self.repository = repository
         self.policy = policy or BreakPolicy(BreakPolicyConfig(
             break_candidate_minutes=self.saved_interval(repository), max_soft_delay_minutes=5,
+            cooldown_minutes=min(10, self.saved_interval(repository)),
         ))
         self.personalization_service = personalization_service
         self.mode = "normal"
@@ -117,13 +118,13 @@ class ReminderCoordinator:
             value = int(repository.get_setting("reminder_interval_minutes", "40"))
         except (ValueError, TypeError):
             return 40
-        return value if 5 <= value <= 180 else 40
+        return value if 1 <= value <= 180 else 40
 
     def set_interval(self, minutes: int) -> None:
-        if isinstance(minutes, bool) or not isinstance(minutes, int) or not 5 <= minutes <= 180:
-            raise ValueError("提醒间隔应为 5–180 分钟。")
+        if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 180:
+            raise ValueError("提醒间隔应为 1–180 分钟。")
         self.repository.set_setting("reminder_interval_minutes", str(minutes))
-        self.policy.config = replace(self.policy.config, break_candidate_minutes=minutes)
+        self.policy.config = replace(self.policy.config, break_candidate_minutes=minutes, cooldown_minutes=min(10, minutes))
         if self.personalization_service is not None:
             self.personalization_service.base_candidate_minutes = minutes
             self.personalization_service.refresh(self.mode)
@@ -237,7 +238,7 @@ class ReminderCoordinator:
         self._last_response = None
         self._postpone_until = None
         self._just_confirmed_task_done = False
-        self.policy.config = replace(self.policy.config, break_candidate_minutes=40)
+        self.policy.config = replace(self.policy.config, break_candidate_minutes=40, cooldown_minutes=10)
         if self.personalization_service is not None:
             self.personalization_service.base_candidate_minutes = 40
         if self.personalization_service is not None:
@@ -370,6 +371,7 @@ class ReminderCoordinator:
         self._postpone_until = self._postpone_for(response, current)
         if response in {"BREAK_NOW", "SKIP"}:
             self.collector.reset_reminder_interval()
+            self._postpone_until = current + timedelta(minutes=min(10, self.policy.config.break_candidate_minutes))
         if self.personalization_service is not None:
             self.personalization_service.refresh(self.mode)
         self._active_event_id = None

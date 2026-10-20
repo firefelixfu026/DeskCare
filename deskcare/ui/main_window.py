@@ -100,7 +100,7 @@ class MainWindow(QMainWindow):
         self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation, 1)
-        version = QLabel("DeskCare · UI7")
+        version = QLabel("DeskCare · UI8")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
@@ -144,6 +144,9 @@ class MainWindow(QMainWindow):
             self.cloud_ai_service,
         )
         self.pages.addWidget(self.today_page)
+        self.today_page.task_scope.currentTextChanged.connect(
+            lambda text: self.header_title.setText(text) if self.navigation.currentRow() == 0 else None
+        )
         self.usage_page = UsagePage(self.monitoring_controller, self.activity_collector)
         self.pages.addWidget(self.usage_page)
         self.reports_page = ReportsPage(
@@ -246,6 +249,8 @@ class MainWindow(QMainWindow):
             else:
                 self.reports_page.refresh_report()
         self.header_title.setText(self.navigation.item(index).text().splitlines()[0])
+        if index == 0:
+            self.header_title.setText(self.today_page.task_scope.currentText())
 
     def _sync_header(self, enabled: bool, paused: bool) -> None:
         if not enabled:

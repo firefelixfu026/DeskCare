@@ -3,7 +3,7 @@
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QThread, Qt, Signal, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QMessageBox,
     QInputDialog,
+    QMenu,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -34,6 +35,7 @@ from deskcare.domain.types import Task, TaskStatus, WELLNESS_LEVEL_LABELS, Welln
 from deskcare.domain.display_names import APP_DISPLAY_NAMES, CATEGORY_DISPLAY_NAMES
 from deskcare.importers.loader import parse_selected_file
 from deskcare.services.bodylog_service import BodyLogService
+from deskcare.services.task_service import TaskService
 from deskcare.services.reminder_service import (
     REMINDER_RESPONSES,
     ReminderSnapshot,
@@ -45,6 +47,8 @@ from deskcare.ui.task_dialog import ImportPreviewDialog, TaskFormDialog
 from deskcare.ui.task_status import TaskStatusCombo
 from deskcare.ui.charts import UsageChart
 from deskcare.ui.report_preview import ReportPreview
+from deskcare.ui.pagination import Pagination
+from deskcare.importers.task_times import task_time_text
 
 
 ACTIVITY_TIPS = (
@@ -118,13 +122,15 @@ class TodayPage(QWidget):
         self.cloud_ai_service = cloud_ai_service
         self.repository = repository
         self._tasks: list[Task] = []
+        self._page_size = 5
+        self._fitting = False
         root = QVBoxLayout(self)
         root.setSpacing(16)
 
         state_row = QHBoxLayout()
         self.monitoring_badge = label("电脑使用统计未开启", "statusBadge")
         self.monitoring_badge.setWordWrap(False)
-        state_row.addWidget(self.monitoring_badge)
+        self.monitoring_badge.hide()
         state_row.addStretch()
         add_button = QPushButton("添加任务")
         add_button.clicked.connect(self._add_manual)
@@ -182,10 +188,14 @@ class TodayPage(QWidget):
         task_frame.setObjectName("card")
         task_layout = QVBoxLayout(task_frame)
         task_layout.setContentsMargins(18, 15, 18, 15)
-        task_layout.addWidget(label("今日任务", "cardTitle"))
+        self.task_scope = QComboBox()
+        self.task_scope.addItems(["今日任务", "后续任务", "全部任务"])
+        self.task_scope.setFixedWidth(170)
+        self.task_scope.currentIndexChanged.connect(self._change_task_scope)
+        task_layout.addWidget(self.task_scope, 0, Qt.AlignmentFlag.AlignLeft)
         self.task_table = QTableWidget(0, 4)
         self.task_table.setObjectName("todayTasks")
-        self.task_table.setHorizontalHeaderLabels(["状态", "任务", "截止时间", "预计用时"])
+        self.task_table.setHorizontalHeaderLabels(["状态", "任务", "日期与时间", "预计用时"])
         self.task_table.setShowGrid(False)
         self.task_table.setWordWrap(False)
         self.task_table.setTextElideMode(Qt.TextElideMode.ElideRight)
@@ -200,9 +210,13 @@ class TodayPage(QWidget):
         for column, width in ((0, 132), (2, 152), (3, 104)):
             self.task_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
             self.task_table.setColumnWidth(column, width)
-        self.task_table.setMinimumHeight(232)
+        self.task_table.setMinimumHeight(140)
+        self.task_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.task_table.viewport().installEventFilter(self)
+        self.task_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.task_table.customContextMenuRequested.connect(self._task_menu)
         self.task_table.itemDoubleClicked.connect(lambda _item: self._edit_selected())
-        task_layout.addWidget(self.task_table)
+        task_layout.addWidget(self.task_table, 1)
         self.empty_state = label("今天还没有任务。可以手动添加，也可以从文字清单导入。", "mutedText")
         task_layout.addWidget(self.empty_state)
         actions = QHBoxLayout()
@@ -215,9 +229,11 @@ class TodayPage(QWidget):
         actions.addWidget(self.edit_button)
         actions.addWidget(self.delete_button)
         actions.addStretch()
+        self.task_pager = Pagination()
+        self.task_pager.changed.connect(lambda _index: self.refresh_tasks())
+        actions.addWidget(self.task_pager)
         task_layout.addLayout(actions)
-        root.addWidget(task_frame)
-        root.addStretch()
+        root.addWidget(task_frame, 1)
         controller.subscribe(self._sync)
         if self.task_service is not None:
             self.task_service.subscribe(self.refresh_tasks)
@@ -237,7 +253,8 @@ class TodayPage(QWidget):
         if dialog.exec() == dialog.DialogCode.Accepted:
             title, due, minutes = dialog.values()
             try:
-                self.task_service.add_manual(title, due, minutes)
+                saved = self.task_service.add_manual(title, due, minutes, **getattr(dialog, "details", lambda: {})())
+                self._show_task(saved)
             except ValueError as exc:
                 QMessageBox.warning(self, "无法添加任务", str(exc))
 
@@ -249,7 +266,9 @@ class TodayPage(QWidget):
         if dialog.exec() == dialog.DialogCode.Accepted:
             title, due, minutes = dialog.values()
             try:
-                self.task_service.update(task.id, title=title, due_at=due, estimated_minutes=minutes)
+                saved = self.task_service.update(task.id, title=title, due_at=due, estimated_minutes=minutes,
+                                                 **getattr(dialog, "details", lambda: {})())
+                self._show_task(saved)
             except (KeyError, ValueError) as exc:
                 QMessageBox.warning(self, "无法编辑任务", str(exc))
 
@@ -307,6 +326,12 @@ class TodayPage(QWidget):
             dialog.cloud_button.setToolTip(explanation)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
+        existing = {task.title for task in self.task_service.list_all() if task.source == Path(path).name}
+        if any(draft.title in existing for draft in dialog.drafts):
+            answer = QMessageBox.question(self, "这份清单可能导入过", "已有同名清单的任务。继续会新增，不会覆盖或修正旧任务。是否仍要导入？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         try:
             self.task_service.confirm_import(dialog.drafts, Path(path).name)
         except ValueError as exc:
@@ -318,7 +343,12 @@ class TodayPage(QWidget):
         if self.task_service is None:
             self._tasks = []
         else:
-            self._tasks = list(self.task_service.list_today())
+            method = (self.task_service.list_today, self.task_service.list_later, self.task_service.list_all)[self.task_scope.currentIndex()]
+            self._tasks = list(method())
+            self.task_scope.setItemText(1, f"后续任务（{len(self.task_service.list_later())}）")
+        self.task_pager.update_total(len(self._tasks), self._page_size)
+        offset = self.task_pager.index * self._page_size
+        self._tasks = self._tasks[offset:offset + self._page_size]
         self.task_table.setRowCount(0)
         self.edit_button.setEnabled(bool(self._tasks))
         self.delete_button.setEnabled(bool(self._tasks))
@@ -340,19 +370,101 @@ class TodayPage(QWidget):
             self.task_table.setCellWidget(row, 0, status)
             title_item = QTableWidgetItem(task.title)
             title_item.setData(Qt.ItemDataRole.UserRole, task.id)
-            title_item.setToolTip(task.title)
+            title_item.setToolTip(task.title + ("\n备注：" + task.notes if task.notes else "")
+                                  + ("\n时间说明：" + task.time_hint if task.time_hint else ""))
             title_item.setForeground(QColor("#7A8D86" if task.status is TaskStatus.DONE else "#294540"))
             self.task_table.setItem(row, 1, title_item)
-            due_item = QTableWidgetItem(task.due_at.astimezone().strftime("%m月%d日 %H:%M") if task.due_at else "—")
+            planned = TaskService.planned_day(task) if self.task_service else date.today()
+            timing = task_time_text(task)
+            due_item = QTableWidgetItem((planned.strftime("%m/%d") + " " + timing).strip() if timing or task.planned_for else "—")
             if task.due_at:
                 due_item.setToolTip(task.due_at.isoformat(timespec="minutes"))
             self.task_table.setItem(row, 2, due_item)
             due_item.setForeground(QColor("#74858A"))
-            estimate = QTableWidgetItem(f"{task.estimated_minutes} 分钟" if task.estimated_minutes else "—")
+            estimate = QTableWidgetItem((f"{task.estimated_minutes} 分钟" + (" · 建议" if task.estimate_is_suggestion else "")) if task.estimated_minutes else "—")
             estimate.setForeground(QColor("#74858A"))
             self.task_table.setItem(row, 3, estimate)
             if task.id == selected_id:
                 self.task_table.setCurrentCell(row, 1)
+        if self._tasks and self.task_table.currentRow() < 0:
+            self.task_table.setCurrentCell(0, 1)
+
+    def _show_task(self, task):
+        scope = 1 if TaskService.planned_day(task) > date.today() else 0
+        rows = list(self.task_service.list_later() if scope else self.task_service.list_today())
+        if not any(row.id == task.id for row in rows):
+            scope, rows = 2, list(self.task_service.list_all())
+        self.task_scope.setCurrentIndex(scope)
+        index = next((i for i, row in enumerate(rows) if row.id == task.id), 0)
+        self.task_pager.index = index // self._page_size
+        self.refresh_tasks()
+        self.task_table.setCurrentCell(index % self._page_size, 1)
+
+    def _change_task_scope(self, _index):
+        if hasattr(self, "task_pager"):
+            self.task_pager.index = 0
+            self.refresh_tasks()
+
+    def eventFilter(self, watched, event):
+        if hasattr(self, "task_table") and watched is self.task_table.viewport() and event.type() == QEvent.Type.Resize:
+            QTimer.singleShot(0, self._fit_task_page)
+        return super().eventFilter(watched, event)
+
+    def _fit_task_page(self):
+        if self._fitting or not hasattr(self, "task_pager"):
+            return
+        size = max(1, self.task_table.viewport().height() // 56)
+        if size != self._page_size:
+            self._fitting = True
+            selected = self.task_table.currentRow()
+            if selected >= 0:
+                absolute = self.task_pager.index * self._page_size + selected
+                self.task_pager.index = absolute // size
+            self._page_size = size
+            self.refresh_tasks()
+            self._fitting = False
+
+    def _task_menu(self, position):
+        index = self.task_table.indexAt(position)
+        if not index.isValid():
+            return
+        self.task_table.setCurrentCell(index.row(), 1)
+        task = self._selected_task()
+        menu = QMenu(self)
+        menu.addAction("编辑任务与时间", self._edit_selected)
+        menu.addAction("查看 / 编辑备注", self._edit_notes)
+        menu.addAction("安排到其他日期…", self._reschedule_selected)
+        menu.addAction("安排到今天", lambda: self.task_service.update(task.id, title=task.title,
+            due_at=task.due_at, estimated_minutes=task.estimated_minutes, planned_for=date.today()))
+        menu.addSeparator()
+        menu.addAction("删除任务", self._delete_selected)
+        menu.exec(self.task_table.viewport().mapToGlobal(position))
+        menu.deleteLater()
+
+    def _reschedule_selected(self):
+        task = self._selected_task()
+        if task is None:
+            return
+        value, accepted = QInputDialog.getText(self, "安排任务日期", "日期（YYYY-MM-DD）",
+            QLineEdit.EchoMode.Normal, (date.today() + timedelta(days=1)).isoformat())
+        if accepted:
+            try:
+                self.task_service.update(task.id, title=task.title, due_at=task.due_at,
+                    estimated_minutes=task.estimated_minutes, planned_for=date.fromisoformat(value.strip()))
+            except ValueError:
+                QMessageBox.warning(self, "日期没有保存", "请输入有效日期，例如 2026-10-25。")
+
+    def _edit_notes(self):
+        task = self._selected_task()
+        if task is None:
+            return
+        text, accepted = QInputDialog.getMultiLineText(self, "任务备注", task.title, task.notes)
+        if accepted:
+            try:
+                self.task_service.update(task.id, title=task.title, due_at=task.due_at,
+                                         estimated_minutes=task.estimated_minutes, notes=text)
+            except ValueError as exc:
+                QMessageBox.warning(self, "备注没有保存", str(exc))
 
     def _set_status(self, task_id: int, status: TaskStatus) -> None:
         if self.task_service is not None:
@@ -428,21 +540,33 @@ class UsagePage(QWidget):
         super().__init__(parent)
         self.controller = controller
         self.collector = collector
+        self.anchor_day = date.today()
+        self._app_page_size = 6
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        content = QWidget()
-        content.setObjectName("usageContent")
-        root = QVBoxLayout(content)
-        root.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
-        scroll.setWidget(content)
-        outer.addWidget(scroll)
+        root = outer
         root.setSpacing(16)
+        period_row = QHBoxLayout()
+        self.period_choice = QComboBox()
+        self.period_choice.addItems(["每天", "每周"])
+        self.period_previous = QPushButton("‹ 前一天")
+        self.period_next = QPushButton("后一天 ›")
+        self.period_label = QLabel()
+        self.period_today = QPushButton("回到今天")
+        for button in (self.period_previous, self.period_next, self.period_today):
+            button.setObjectName("secondaryButton")
+        for widget in (self.period_choice, self.period_previous, self.period_label, self.period_next):
+            period_row.addWidget(widget)
+        period_row.addStretch()
+        period_row.addWidget(self.period_today)
+        root.addLayout(period_row)
+        self.period_choice.currentIndexChanged.connect(self._period_changed)
+        self.period_previous.clicked.connect(lambda: self._move_period(-1))
+        self.period_next.clicked.connect(lambda: self._move_period(1))
+        self.period_today.clicked.connect(self._return_today)
         grid = QGridLayout()
         grid.setSpacing(12)
-        active_frame, self.active_value = self._metric_card("今天活跃时间估计", "未开启统计", "#7D9FB3")
+        active_frame, self.active_value = self._metric_card("活跃时间估计", "未开启统计", "#7D9FB3")
         category_frame, self.continuous_value = self._metric_card("当前连续活跃", "暂无数据", "#D69E52")
         grid.addWidget(active_frame, 0, 0)
         grid.addWidget(category_frame, 0, 1)
@@ -452,20 +576,21 @@ class UsagePage(QWidget):
         self.session_value = label("", "cardBody")
         self.session_value.hide()
         self.sections = QTabWidget()
-        self.sections.setMinimumHeight(350)
-        self.sections.setMaximumHeight(430)
-        root.addWidget(self.sections)
+        self.sections.setMinimumHeight(240)
+        root.addWidget(self.sections, 1)
         overview = QWidget()
         overview_layout = QHBoxLayout(overview)
         overview_layout.setContentsMargins(0, 0, 0, 0)
         self.week_chart = UsageChart("columns")
         self.category_chart = UsageChart("donut")
-        for title, chart in (("最近 7 天 · 活跃时间", self.week_chart), ("今天 · 应用类别占比", self.category_chart)):
+        self.period_chart_title = label("当天小时分布", "cardTitle")
+        self.category_title = label("类别占比", "cardTitle")
+        for title, chart in ((self.period_chart_title, self.week_chart), (self.category_title, self.category_chart)):
             panel = QFrame()
             panel.setObjectName("card")
             panel_layout = QVBoxLayout(panel)
             panel_layout.setContentsMargins(18, 16, 18, 14)
-            panel_layout.addWidget(label(title, "cardTitle"))
+            panel_layout.addWidget(title)
             panel_layout.addWidget(chart, 1)
             overview_layout.addWidget(panel, 1)
         self.sections.addTab(overview, "使用概览")
@@ -473,17 +598,16 @@ class UsagePage(QWidget):
         app_frame.setObjectName("card")
         app_layout = QVBoxLayout(app_frame)
         app_layout.setContentsMargins(18, 15, 18, 15)
-        app_layout.addWidget(label("最近 7 天 · 各应用使用时长", "cardTitle"))
+        app_layout.addWidget(label("各应用使用时长", "cardTitle"))
         self.app_usage_value = label("具体应用明细默认关闭。", "appUsageValue")
         app_layout.addWidget(self.app_usage_value)
-        app_scroll = QScrollArea()
-        app_scroll.setWidgetResizable(True)
-        app_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.app_chart = UsageChart("bars")
-        app_scroll.setWidget(self.app_chart)
-        app_layout.addWidget(app_scroll, 1)
+        self.app_chart.installEventFilter(self)
+        app_layout.addWidget(self.app_chart, 1)
+        self.app_pager = Pagination()
+        self.app_pager.changed.connect(lambda _index: self._sync_app_usage())
+        app_layout.addWidget(self.app_pager)
         self.sections.addTab(app_frame, "应用排行")
-        root.addStretch()
         controller.subscribe(self._sync)
         if collector is not None:
             collector.subscribe(lambda _result: self._sync(controller.enabled, controller.paused))
@@ -505,43 +629,56 @@ class UsagePage(QWidget):
     def _sync(self, enabled: bool, paused: bool) -> None:
         self._sync_app_usage()
         self.demo_banner.hide()
-        if not enabled:
-            self.week_chart.set_values((), "开启统计后，这里会显示最近 7 天的记录")
-            self.category_chart.set_values((), "当前未开启电脑使用统计")
-            self.active_value.setText("未开启监测\n\n不会把未采集的数据表示为 0 分钟。")
-            self.continuous_value.setText("未开启统计")
-            self.session_value.setText("电脑使用统计尚未开启。你仍可正常管理任务。")
-            self.demo_banner.setText("目前没有收集使用时间，因此不会显示成 0 分钟。")
-            return
+        start, end = self.period_range()
+        self.period_label.setText(start.strftime("%Y/%m/%d") + (" — " + end.strftime("%m/%d") if start != end else ""))
+        self.period_previous.setText("‹ 前一周" if self.period_choice.currentIndex() else "‹ 前一天")
+        self.period_next.setText("后一周 ›" if self.period_choice.currentIndex() else "后一天 ›")
+        self.period_next.setEnabled(end < date.today())
         if self.collector is None:
-            self.active_value.setText("统计刚开启，正在收集使用时间")
+            self.active_value.setText("未开启监测" if not enabled else "统计服务暂不可用")
             self.continuous_value.setText("统计暂时不可用")
-            self.session_value.setText("统计暂时不可用；其他功能仍可继续使用。")
             return
-        rows = self.collector.usage_for_day(date.today())
+        rows = []
         week = []
-        for offset in range(6, -1, -1):
-            day = date.today() - timedelta(days=offset)
+        for offset in range((end - start).days + 1):
+            day = start + timedelta(days=offset)
             day_rows = self.collector.usage_for_day(day)
+            rows.extend(day_rows)
             week.append((day.strftime("%m/%d"), sum(row.active_seconds for row in day_rows) if day_rows else None))
-        self.week_chart.set_values(week)
+        if self.period_choice.currentIndex():
+            self.period_chart_title.setText("一周活跃时间")
+            self.week_chart.set_values(week, "这周没有可显示的使用记录")
+        else:
+            self.period_chart_title.setText("当天小时分布")
+            hourly = self.collector.repository.hourly_usage(start)
+            buckets = {}
+            for row in hourly:
+                buckets[row["hour"]] = buckets.get(row["hour"], 0) + row["active_seconds"]
+            self.week_chart.set_values([(str(hour), buckets.get(hour)) for hour in range(24)] if hourly else (),
+                "尚无小时记录；可在设置中单独开启" if self.collector.repository.get_consent("hourly_stats") is not True
+                else "这一天没有小时记录；不会补填历史分布")
+        totals = {}
+        for row in rows:
+            totals[row.category] = totals.get(row.category, 0) + row.active_seconds
         self.category_chart.set_values([
-            (CATEGORY_DISPLAY_NAMES.get(row.category, "其他应用"), row.active_seconds)
-            for row in rows if row.active_seconds > 0
-        ], "今天还没有可显示的活跃记录")
+            (CATEGORY_DISPLAY_NAMES.get(category, "其他应用"), seconds)
+            for category, seconds in totals.items() if seconds > 0
+        ], "这个时段没有可显示的活跃记录")
+        self.week_chart.setMinimumHeight(160)
+        self.category_chart.setMinimumHeight(160)
         active = sum(row.active_seconds for row in rows)
         idle = sum(row.idle_seconds for row in rows)
         unknown = sum(row.unknown_seconds for row in rows)
         if not rows:
-            self.active_value.setText("统计已开启，正在收集使用时间")
+            self.active_value.setText("未开启监测 · 没有记录" if not enabled else "这个时段没有记录")
         else:
             self.active_value.setText(
             f"活跃约 {active / 60:.1f} 分钟\n"
             f"空闲约 {idle / 60:.1f} 分钟 · 未能判断约 {unknown / 60:.1f} 分钟"
             )
-        state = "已暂停" if paused else "运行中"
+        state = "未开启" if not enabled else "已暂停" if paused else "运行中"
         continuous = self.collector.continuous_active_seconds
-        self.continuous_value.setText(f"约 {continuous / 60:.1f} 分钟" + (" · 已暂停" if paused else ""))
+        self.continuous_value.setText(f"约 {continuous / 60:.1f} 分钟" + (" · " + state if not enabled or paused else ""))
         self.session_value.setText(
             f"统计{state}。连续使用时间约 {continuous / 60:.1f} 分钟。电脑锁屏或休眠期间不会算作持续使用。"
         )
@@ -569,19 +706,53 @@ class UsagePage(QWidget):
             return
         repository = self.collector.repository
         if repository.get_consent("app_name_stats") is not True:
+            self.app_pager.update_total(0, self._app_page_size)
             self.app_usage_value.setText("未开启独立授权；不会保存具体应用标识。")
             self.app_chart.set_values((), "如需查看应用排行，请在设置中单独开启应用名称统计")
             return
-        rows = repository.app_usage_for_period(date.today() - timedelta(days=6), date.today())
+        rows = repository.app_usage_for_period(*self.period_range())
+        self.app_pager.update_total(len(rows), self._app_page_size)
+        offset = self.app_pager.index * self._app_page_size
         self.app_chart.set_values([
             (APP_DISPLAY_NAMES.get(row.app_id, row.app_id), row.active_seconds)
-            for row in rows if row.active_seconds > 0
-        ], "已授权，最近 7 天尚无应用记录")
+            for row in rows[offset:offset+self._app_page_size] if row.active_seconds > 0
+        ], "这个时段没有应用记录")
+        self.app_chart.setMinimumHeight(100)
         self.app_usage_value.setText(
-            f"最近 7 天记录了 {len(rows)} 个应用，按活跃时间排列。"
+            f"这个时段记录了 {len(rows)} 个应用，按活跃时间排列。"
             if rows
-            else "已授权，最近 7 天尚无可显示的应用时长。"
+            else "已授权，这个时段没有可显示的应用时长。"
         )
+
+    def period_range(self):
+        if not self.period_choice.currentIndex():
+            return self.anchor_day, self.anchor_day
+        start = self.anchor_day - timedelta(days=self.anchor_day.weekday())
+        return start, start + timedelta(days=6)
+
+    def _period_changed(self, _index):
+        self.app_pager.index = 0
+        self._sync(self.controller.enabled, self.controller.paused)
+
+    def _move_period(self, direction):
+        day = self.anchor_day + timedelta(days=direction * (7 if self.period_choice.currentIndex() else 1))
+        self.anchor_day = min(day, date.today())
+        self._period_changed(0)
+
+    def _return_today(self):
+        self.anchor_day = date.today()
+        self._period_changed(0)
+
+    def eventFilter(self, watched, event):
+        if hasattr(self, "app_chart") and watched is self.app_chart and event.type() == QEvent.Type.Resize:
+            QTimer.singleShot(0, self._fit_app_page)
+        return super().eventFilter(watched, event)
+
+    def _fit_app_page(self):
+        size = max(1, (self.app_chart.height() - 26) // 38)
+        if size != self._app_page_size:
+            self._app_page_size = size
+            self._sync_app_usage()
 
 
 class ReportsPage(QWidget):
@@ -650,12 +821,11 @@ class ReportsPage(QWidget):
         self.wellness_history.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.wellness_history.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.wellness_history.setShowGrid(False)
-        self.wellness_history.setFixedHeight(276)
-        history_layout.addWidget(self.wellness_history)
+        self.wellness_history.setMinimumHeight(200)
+        history_layout.addWidget(self.wellness_history, 1)
         self.history_empty = label("开启状态打卡后，可在这里回看自己的记录。", "cardBody")
         history_layout.addWidget(self.history_empty)
-        status_layout.addWidget(history_card)
-        status_layout.addStretch()
+        status_layout.addWidget(history_card, 1)
         status_scroll = QScrollArea()
         status_scroll.setFrameShape(QFrame.Shape.NoFrame)
         status_scroll.setWidgetResizable(True)
@@ -968,6 +1138,12 @@ class SettingsPage(QWidget):
             "只有同时开启电脑使用统计和此项，才会记录应用名称。关闭后会立即删除已有应用时长；类别汇总不受影响。",
             "mutedText",
         ))
+        self.hourly_stats = QCheckBox("按小时汇总使用时间（单独开启，默认关闭）")
+        self.hourly_stats.setChecked(self.repository.get_consent("hourly_stats") is True if self.repository else False)
+        self.hourly_stats.setEnabled(collector is not None)
+        self.hourly_stats.setToolTip("只保存每小时的类别时长，保留最近 30 天，不保存逐秒轨迹；关闭会清除已有小时记录。")
+        self.hourly_stats.toggled.connect(lambda enabled: self.collector.set_hourly_enabled(enabled))
+        root.addWidget(self.hourly_stats)
         root.addStretch()
         reminders = QWidget()
         root = QVBoxLayout(reminders)
@@ -983,8 +1159,10 @@ class SettingsPage(QWidget):
         interval_row = QHBoxLayout()
         interval_row.addWidget(QLabel("大约多久提醒一次"))
         self.reminder_interval = QSpinBox()
-        self.reminder_interval.setRange(5, 180)
-        self.reminder_interval.setSingleStep(5)
+        self.reminder_interval.setRange(1, 180)
+        self.reminder_interval.setSingleStep(1)
+        self.reminder_interval.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        self.reminder_interval.setToolTip("可直接输入任意整数分钟，例如 13 或 27；回车或移开焦点后保存。")
         self.reminder_interval.setSuffix(" 分钟")
         self.reminder_interval.setFixedWidth(140)
         self.reminder_interval.setValue(ReminderCoordinator.saved_interval(self.repository) if self.repository else 40)
@@ -1483,6 +1661,7 @@ class SettingsPage(QWidget):
             self.personalization_service.reset_to_default()
         if self.collector is not None:
             self.collector.set_app_name_enabled(False)
+            self.collector.set_hourly_enabled(False)
         self.controller.set_enabled(False)
         if self.local_ai_service is not None:
             self.local_ai_service.reset_configuration()
@@ -1499,6 +1678,9 @@ class SettingsPage(QWidget):
         self.app_names.blockSignals(True)
         self.app_names.setChecked(False)
         self.app_names.blockSignals(False)
+        self.hourly_stats.blockSignals(True)
+        self.hourly_stats.setChecked(False)
+        self.hourly_stats.blockSignals(False)
         self.cloud_ai.blockSignals(True)
         self.cloud_ai.setChecked(False)
         self.cloud_ai.blockSignals(False)

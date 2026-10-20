@@ -1,6 +1,7 @@
 """Deterministic, clearly labelled end-to-end demo data for DeskCare."""
 
 from __future__ import annotations
+from dataclasses import replace
 
 from datetime import date, datetime, time, timedelta
 
@@ -63,7 +64,7 @@ def prepare_demo_scenario(
         raise RuntimeError("内置演示任务未能通过导入校验")
 
     task_service = TaskService(repository)
-    tasks = task_service.confirm_import(imported.drafts, imported.source_name)
+    tasks = task_service.confirm_import(tuple(replace(draft, planned_for=today) for draft in imported.drafts), imported.source_name)
 
     samples = [
         ActivitySample(

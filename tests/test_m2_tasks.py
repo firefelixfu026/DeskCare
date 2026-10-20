@@ -33,13 +33,13 @@ def test_task_migration_confirmation_edit_status_and_delete(tmp_path):
     assert len(repository.tasks_for_day(target_day)) == 1
 
 
-def test_today_includes_tasks_confirmed_today_even_when_due_later(tmp_path):
+def test_future_task_is_in_later_scope_not_today(tmp_path):
     repository = UsageRepository(tmp_path / "deskcare.sqlite3")
     service = TaskService(repository)
     task = service.add_manual("下周准备材料", datetime.now() + timedelta(days=7), 20)
-    # The service uses the real local confirmation day; the task should remain
-    # visible in today's list until the user manages it explicitly.
-    assert task in service.list_today()
+    assert task not in service.list_today()
+    assert task in service.list_later()
+    assert task in service.list_all()
 
 
 def test_naive_local_deadline_is_timezone_safe_and_fake_clock_selects_its_day(tmp_path):

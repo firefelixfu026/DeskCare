@@ -24,7 +24,8 @@ from deskcare.services.report_engine import LocalReportService
 from deskcare.services.task_service import TaskService
 from deskcare.storage.database import UsageRepository
 from deskcare.ui.main_window import MainWindow
-from deskcare.ui.task_dialog import TaskFormDialog
+from deskcare.ui.task_dialog import TaskFormDialog, ImportPreviewDialog
+from deskcare.importers.text_importer import parse_text_bytes
 from deskcare.domain.types import TaskStatus, WellnessLevel
 
 
@@ -44,17 +45,27 @@ def main():
         for offset, level in ((0, WellnessLevel.COMFORTABLE), (2, WellnessLevel.COMFORTABLE)):
             repository.upsert_wellness_entry(date.today() - timedelta(days=offset), level)
         repository.set_consent("app_name_stats", True)
+        repository.set_consent("hourly_stats", True)
         for offset, minutes in enumerate((135, 95, 182, 150, 75, 120, 42)):
             repository.add_usage(date.today() - timedelta(days=offset), "CODE", active_seconds=minutes * 60)
         for category, seconds in (("BROWSER", 1800), ("OFFICE", 1200), ("MEETING", 900)):
             repository.add_usage(date.today(), category, active_seconds=seconds)
         for name, seconds in (("code", 5200), ("chrome", 3100), ("wechat", 2100), ("wps", 1500), ("dingTalk", 600)):
             repository.add_app_usage(date.today(), name.lower(), seconds)
+        for index in range(20):
+            repository.add_app_usage(date.today(), f"演示应用{index+1:02}", 60 - index)
+        for hour, category, seconds in ((9, "CODE", 3600), (10, "CODE", 3600), (11, "CODE", 3300),
+                                         (13, "BROWSER", 1800), (14, "OFFICE", 1200), (15, "MEETING", 900)):
+            repository.add_hourly_usage(date.today(), hour, category, active_seconds=seconds)
         controller = MonitoringController(FakeActivityProvider(), initially_enabled=True)
         collector = ActivityCollector(controller, repository)
         tasks = TaskService(repository)
         preview_task = tasks.add_manual("整理下一次展示的材料和演示流程", estimated_minutes=30)
         tasks.set_status(preview_task.id, TaskStatus.DOING)
+        for index in range(10):
+            tasks.add_manual(f"演示任务 {index + 1}：整理材料", estimated_minutes=20 + index,
+                             notes="虚构示例备注，可右键编辑。" if index == 1 else "")
+        tasks.add_manual("下周交流准备（演示）", planned_for=date.today() + timedelta(days=3))
         reminder = ReminderCoordinator(controller, collector, tasks, repository)
         window = MainWindow(ConfigStore(), controller, collector, tasks, reminder, repository,
                             BodyLogService(repository, True), LocalReportService(repository),
@@ -80,6 +91,31 @@ def main():
         window.reminder_popup.grab().save(str(args.output / "reminder-preview.png"))
         window.reminder_popup.hide()
         window.navigation.setCurrentRow(0)
+        window.today_page.task_scope.setCurrentIndex(1)
+        app.processEvents()
+        window.grab().save(str(args.output / "tasks-later.png"))
+        window.today_page.task_scope.setCurrentIndex(0)
+        window.today_page.task_pager.next.click()
+        app.processEvents()
+        window.grab().save(str(args.output / "tasks-page2.png"))
+        window.today_page.task_pager.previous.click()
+        window.navigation.setCurrentRow(1)
+        window.usage_page.sections.setCurrentIndex(0)
+        window.usage_page.period_choice.setCurrentIndex(1)
+        for chart in (window.usage_page.week_chart, window.usage_page.category_chart):
+            chart.animation.stop()
+            chart._animate(1.0)
+        app.processEvents()
+        window.grab().save(str(args.output / "usage-weekly.png"))
+        window.usage_page.period_previous.click()
+        for chart in (window.usage_page.week_chart, window.usage_page.category_chart):
+            chart.animation.stop()
+            chart._animate(1.0)
+        app.processEvents()
+        window.grab().save(str(args.output / "usage-history.png"))
+        window.usage_page.period_today.click()
+        window.usage_page.period_choice.setCurrentIndex(0)
+        window.navigation.setCurrentRow(0)
         status_control = window.today_page.task_table.cellWidget(0, 0)
         status_control.showPopup()
         app.processEvents()
@@ -91,6 +127,16 @@ def main():
         app.processEvents()
         task_dialog.grab().save(str(args.output / "task-dialog.png"))
         task_dialog.close()
+        source = (f"# {date.today():%m.%d}\n- [ ] 准备演示（ddl 23：00）\n"
+                  "- [ ] 整理记录（ddl 24：00）\n"
+                  f"# {(date.today() + timedelta(days=1)):%m.%d}\n"
+                  "- [ ] 参加交流（19：00-20：00）\n- [ ] 讨论安排（暂定下午）\n")
+        import_dialog = ImportPreviewDialog(parse_text_bytes(source.encode(), "演示清单.md"), window)
+        import_dialog.table.item(0, 4).setText("演示备注，可自行修改。")
+        import_dialog.show()
+        app.processEvents()
+        import_dialog.grab().save(str(args.output / "import-preview.png"))
+        import_dialog.close()
         window.companion.show()
         app.processEvents()
         window.companion.grab().save(str(args.output / "companion.png"))
@@ -117,7 +163,7 @@ def main():
         window._allow_close = True
         window.close()
         gc.collect()
-    print(f"Rendered twenty fictional-data previews to {args.output}")
+    print(f"Rendered twenty-five fictional-data previews to {args.output}")
 
 
 if __name__ == "__main__":

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time
+from dataclasses import replace
+from datetime import datetime
 
 from deskcare.domain.types import TaskDraft
+from deskcare.importers.task_times import heading_day, split_task_time
 from deskcare.importers.base import (
     MAX_ESTIMATED_MINUTES,
     MAX_FILE_BYTES,
@@ -20,19 +22,6 @@ from deskcare.importers.base import (
 
 _CHECKBOX = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)?\[(?: |x|X)\]\s*(.+)$")
 _BULLET = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)(.+)$")
-_TIME = re.compile(r"^(?P<time>\d{1,2}:\d{2})\s+(.+)$")
-_ISO = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})(?:[ T](?P<time>\d{1,2}:\d{2}))?\s+(.+)$")
-_MINUTES = re.compile(r"\b(?:预计\s*)?(?P<minutes>\d{1,4})\s*(?:分钟|min|mins)\b", re.IGNORECASE)
-
-
-def _parse_clock(value: str, today: date) -> datetime | None:
-    try:
-        parsed = time.fromisoformat(value)
-    except ValueError:
-        return None
-    return datetime.combine(today, parsed)
-
-
 def parse_text_bytes(content: bytes, filename: str = "tasks.txt", *, reference_now: datetime | None = None) -> ImportResult:
     if len(content) > MAX_FILE_BYTES:
         return ImportResult(filename, (), (ImportIssue("file_too_large", "文件超过 1 MB，未读取。"),))
@@ -47,12 +36,21 @@ def parse_text_bytes(content: bytes, filename: str = "tasks.txt", *, reference_n
     now = reference_now or datetime.now().astimezone().replace(tzinfo=None)
     drafts: list[TaskDraft] = []
     issues: list[ImportIssue] = []
+    section_day = None
+    assumed_year = False
+    list_mode = any(_CHECKBOX.match(line) or _BULLET.match(line) for line in text.splitlines())
     for row_number, raw_line in enumerate(text.splitlines(), start=1):
         if len(drafts) >= MAX_TASKS_PER_IMPORT:
             issues.append(ImportIssue("too_many_tasks", f"一次最多导入 {MAX_TASKS_PER_IMPORT} 项任务。"))
             break
         line = raw_line.strip()
+        heading, implicit_year = heading_day(line, now.date())
+        if heading is not None:
+            section_day, assumed_year = heading, implicit_year
+            continue
         if not line or line.startswith("#") or line.startswith(">"):
+            continue
+        if re.fullmatch(r"(?:[-*+]\s*)?\[\s*[xX]?\s*\]", line):
             continue
         checkbox_match = _CHECKBOX.match(line)
         marked_done = bool(checkbox_match and checkbox_match.group(0).lower().find("[x]") >= 0)
@@ -60,39 +58,22 @@ def parse_text_bytes(content: bytes, filename: str = "tasks.txt", *, reference_n
             title = checkbox_match.group(1).strip()
         else:
             bullet_match = _BULLET.match(line)
-            title = bullet_match.group(1).strip() if bullet_match else line
-        due_at: datetime | None = None
-        uncertainty: list[str] = []
-        iso_match = _ISO.match(title)
-        if iso_match:
-            raw_date = iso_match.group("date")
-            raw_time = iso_match.group("time")
-            try:
-                due_at = datetime.fromisoformat(f"{raw_date}T{raw_time or '00:00'}")
-            except ValueError:
-                issues.append(ImportIssue("invalid_due_at", "日期格式无法识别，请在预览中修正。", row_number))
-            title = title[iso_match.end(2) + 1 :].strip() if raw_time else title[iso_match.end(1) + 1 :].strip()
-        else:
-            time_match = _TIME.match(title)
-            if time_match:
-                due_at = _parse_clock(time_match.group("time"), now.date())
-                uncertainty.append("due_time_ambiguous")
-                title = time_match.group(2).strip()
-        estimate_match = _MINUTES.search(title)
-        estimated_minutes = None
-        if estimate_match:
-            estimated_minutes = int(estimate_match.group("minutes"))
-            if not 1 <= estimated_minutes <= MAX_ESTIMATED_MINUTES:
-                issues.append(ImportIssue("invalid_estimated_minutes", "预计时长超出允许范围。", row_number))
+            if list_mode and bullet_match is None:
                 continue
-            title = (title[: estimate_match.start()] + title[estimate_match.end() :]).strip(" -()")
+            title = bullet_match.group(1).strip() if bullet_match else line
+        draft = split_task_time(title, section_day, now.date())
         if marked_done:
-            uncertainty.append("source_marked_done_needs_confirmation")
-        title_issue = validate_title(title, row_number)
-        if title_issue:
-            issues.append(title_issue)
+            draft = replace(draft, uncertainty=draft.uncertainty + ("source_marked_done_needs_confirmation",))
+        if assumed_year:
+            draft = replace(draft, uncertainty=draft.uncertainty + ("year_assumed",))
+        issue = validate_title(draft.title, row_number)
+        if issue:
+            issues.append(issue)
             continue
-        drafts.append(TaskDraft(title, due_at, estimated_minutes, row_number, tuple(uncertainty)))
+        if draft.estimated_minutes is not None and not 1 <= draft.estimated_minutes <= MAX_ESTIMATED_MINUTES:
+            issues.append(ImportIssue("invalid_estimated_minutes", "预计时长超出允许范围。", row_number))
+            continue
+        drafts.append(replace(draft, source_row=row_number))
     issues.extend(duplicate_issues(drafts))
     return ImportResult(filename, tuple(drafts), tuple(issues))
 

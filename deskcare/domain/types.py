@@ -1,7 +1,7 @@
 """Shared data contracts for activity, tasks and future policy services."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 
 
@@ -55,6 +55,12 @@ class Task:
     confirmed_at: datetime | None = None
     completed_at: datetime | None = None
     source: str = "manual"
+    planned_for: date | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    notes: str = ""
+    time_hint: str = ""
+    estimate_is_suggestion: bool = False
 
 
 @dataclass(frozen=True)
@@ -80,6 +86,12 @@ class TaskDraft:
     estimated_minutes: int | None = None
     source_row: int | None = None
     uncertainty: tuple[str, ...] = ()
+    planned_for: date | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    notes: str = ""
+    time_hint: str = ""
+    estimate_is_suggestion: bool = False
 
 
 @dataclass(frozen=True)

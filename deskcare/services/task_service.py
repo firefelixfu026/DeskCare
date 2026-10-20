@@ -27,7 +27,22 @@ class TaskService:
             listener()
 
     def list_today(self, day: date | None = None) -> Sequence[Task]:
-        return self.repository.tasks_for_day(day)
+        target = day or date.today()
+        return [task for task in self.repository.all_tasks() if self.planned_day(task) == target
+                or (self.planned_day(task) < target and (task.status is not TaskStatus.DONE
+                    or (task.completed_at and task.completed_at.astimezone().date() == target)))]
+
+    @staticmethod
+    def planned_day(task: Task) -> date:
+        return (task.planned_for or (task.starts_at.date() if task.starts_at else None)
+                or (task.due_at.astimezone().date() if task.due_at else None)
+                or (task.confirmed_at.date() if task.confirmed_at else date.today()))
+
+    def list_later(self, day: date | None = None) -> Sequence[Task]:
+        return [task for task in self.repository.all_tasks() if self.planned_day(task) > (day or date.today())]
+
+    def list_all(self) -> Sequence[Task]:
+        return self.repository.all_tasks()
 
     def next_confirmed_deadline(self, day: date | None = None, now: datetime | None = None) -> datetime | None:
         reference = (now or datetime.now().astimezone()).astimezone()
@@ -51,8 +66,9 @@ class TaskService:
         title: str,
         due_at: datetime | None = None,
         estimated_minutes: int | None = None,
+        **details,
     ) -> Task:
-        task = self.repository.add_task(title, due_at, estimated_minutes)
+        task = self.repository.add_task(title, due_at, estimated_minutes, **details)
         self._notify()
         return task
 
@@ -63,12 +79,14 @@ class TaskService:
         title: str,
         due_at: datetime | None = None,
         estimated_minutes: int | None = None,
+        **details,
     ) -> Task:
         task = self.repository.update_task(
             task_id,
             title=title,
             due_at=due_at,
             estimated_minutes=estimated_minutes,
+            **details,
         )
         self._notify()
         return task

@@ -71,7 +71,7 @@ def duplicate_issues(drafts: list[TaskDraft]) -> list[ImportIssue]:
     seen: dict[str, int] = {}
     issues: list[ImportIssue] = []
     for draft in drafts:
-        key = " ".join(draft.title.casefold().split())
+        key = (" ".join(draft.title.casefold().split()), draft.planned_for, draft.due_at, draft.starts_at)
         if key in seen:
             issues.append(
                 ImportIssue(

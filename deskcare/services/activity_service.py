@@ -100,6 +100,13 @@ class ActivityCollector:
     def reset_reminder_interval(self) -> None:
         self.reminder_elapsed_seconds = 0.0
 
+    def set_hourly_enabled(self, enabled: bool) -> None:
+        self.repository.set_consent("hourly_stats", bool(enabled))
+        if not enabled:
+            self.repository.clear_hourly_usage()
+        self.reset_session()
+        self.notify()
+
     @property
     def latest_sample(self) -> ActivitySample | None:
         """Expose the latest bounded in-memory observation to M3 only."""
@@ -165,6 +172,14 @@ class ActivityCollector:
             self.continuous_active_seconds = 0.0
             self.reset_reminder_interval()
             return self._finish(PollResult(True, discarded_gap_seconds=elapsed, reason="long_gap"))
+        wall_elapsed = (sample.wall_time - previous.wall_time).total_seconds()
+        if wall_elapsed <= 0 or abs(wall_elapsed - elapsed) > self.max_interval_s:
+            # Manual clock/timezone changes are not observations of intervening
+            # hours. Discard this boundary rather than spread seconds over an
+            # arbitrary number of calendar buckets.
+            self.continuous_active_seconds = 0.0
+            self.reset_reminder_interval()
+            return self._finish(PollResult(True, discarded_gap_seconds=elapsed, reason="clock_change"))
 
         if previous.state is ActivityKind.ACTIVE and sample.state is ActivityKind.ACTIVE:
             self.continuous_active_seconds += elapsed
@@ -192,6 +207,18 @@ class ActivityCollector:
             self.repository.add_usage(bucket, category, **bucket_kwargs)
             if previous.app_id and self.repository.get_consent("app_name_stats") is True:
                 self.repository.add_app_usage(bucket, previous.app_id, duration)
+        if self.repository.get_consent("hourly_stats") is True:
+            start, end = previous.wall_time, sample.wall_time
+            total_wall = (end - start).total_seconds()
+            if total_wall > 0:
+                cursor = start
+                while cursor < end:
+                    boundary = cursor.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+                    stop = min(boundary, end)
+                    share = elapsed * (stop - cursor).total_seconds() / total_wall
+                    self.repository.add_hourly_usage(cursor.date(), cursor.hour, category,
+                        **{key: value * share / elapsed for key, value in kwargs.items()})
+                    cursor = stop
         return self._finish(PollResult(True, recorded_seconds=elapsed, reason="recorded"))
 
     def usage_for_day(self, day: date | str | None = None) -> list[UsageRow]:

@@ -92,7 +92,9 @@ class LocalLLMClient:
             "你是 DeskCare 的本地任务候选解析器。只处理用户主动选择的文本。"
             "输出严格 JSON，格式为 {\"tasks\":[{\"title\":string,"
             "\"due_at\":string|null,\"estimated_minutes\":integer|null}]}。"
-            "不要补充文本中不存在的日期、时间或任务；无法确定的字段返回 null。"
+            "按日期标题归属每条任务，区分括号里的 ddl、24:00 和活动起止时间，不遗漏原任务。"
+            "不要补充文本中不存在的日期或钟点；无法确定的时间返回 null。"
+            "用户已写预计用时时保留；未写时根据任务给出保守的预计分钟数，作为用户可修改的建议。"
             "不要输出医学、情绪或任务完成判断。"
         )
         parsed = self.request_json(prompt, text)
@@ -205,7 +207,10 @@ class LocalLLMClient:
                 if isinstance(estimate, bool) or not isinstance(estimate, int) or not 1 <= estimate <= MAX_ESTIMATED_MINUTES:
                     estimate = None
                     uncertainty.append("model_estimate_needs_confirmation")
-            drafts.append(TaskDraft(title, due_at, estimate, index, tuple(uncertainty)))
+            drafts.append(TaskDraft(title, due_at, estimate, index, tuple(uncertainty),
+                                    estimate_is_suggestion=estimate is not None))
+        from deskcare.importers.task_times import merge_source_times
+        drafts = merge_source_times(drafts, source_text, filename) if drafts else drafts
         issues.extend(duplicate_issues(drafts))
         if not drafts:
             raise LocalModelError("本机模型没有返回可编辑候选；已保留规则解析。")

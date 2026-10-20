@@ -129,6 +129,8 @@ class UsageChart(QWidget):
             minutes = maximum / 60 * 1.12
             unit = 60 if minutes > 120 else 15 if minutes > 15 else 1
             self._target_max = max(60.0, ceil(minutes / unit) * unit * 60)
+            if len(entries) == 24 and all(entry.label.isdigit() for entry in entries) and maximum <= 3600:
+                self._target_max = 3600.0
         else:
             self._target_max = max(1.0, maximum)
         self._start_max = self._display_max
@@ -189,10 +191,17 @@ class UsageChart(QWidget):
             painter.drawRoundedRect(bar, 5, 5)
             painter.setPen(QColor("#67777B"))
             axis_label = entry.label.rsplit("/", 1)[-1] + "日" if step < 48 and "/" in entry.label else entry.label
-            painter.drawText(QRectF(plot.left() + step * index, plot.bottom() + 10, step, 23),
+            hourly = len(entries) > 12 and entry.label.isdigit()
+            if hourly:
+                axis_label = f"{int(entry.label)}:00" if int(entry.label) % 6 == 0 else ""
+            painter.drawText(QRectF(plot.left() + step * index - (18 if hourly else 0),
+                                   plot.bottom() + 10, max(step, 52) if hourly else step, 23),
                              Qt.AlignmentFlag.AlignCenter, axis_label)
-            tip = f"{entry.label}：{'无记录' if entry.seconds is None else duration(entry.seconds)}"
+            tip_label = f"{int(entry.label):02}:00–{int(entry.label)+1:02}:00" if hourly else entry.label
+            tip = f"{tip_label}：{'无记录' if entry.seconds is None else duration(entry.seconds)}"
             self._hits.append((QRectF(plot.left() + step * index, plot.top(), step, plot.height()), tip))
+        if len(entries) == 24 and entries[0].label.isdigit():
+            painter.drawText(QRectF(plot.right() - 40, plot.bottom() + 10, 52, 23), Qt.AlignmentFlag.AlignCenter, "24:00")
 
     def _bars(self, painter):
         maximum = max(1.0, self._display_max)

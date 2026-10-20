@@ -36,13 +36,14 @@ def test_charts_follow_live_aggregates_and_revoked_app_consent(shell):
     repository.add_app_usage(date.today(), "chrome", 120)
     collector.notify()
     usage = window.usage_page
-    assert usage.week_chart.entries[-1].seconds == 120
-    assert usage.week_chart.entries[0].seconds is None  # no observation, not zero
+    usage.period_choice.setCurrentIndex(1)
+    assert next(entry.seconds for entry in usage.week_chart.entries if entry.label == date.today().strftime("%m/%d")) == 120
+    assert any(entry.seconds is None for entry in usage.week_chart.entries)  # no observation, not zero
     assert usage.category_chart.entries[0].label == "浏览器"
     assert usage.app_chart.entries[0].seconds == 120
     repository.add_usage(date.today(), "BROWSER", active_seconds=60)
     collector.notify()
-    assert usage.week_chart.entries[-1].seconds == 180
+    assert next(entry.seconds for entry in usage.week_chart.entries if entry.label == date.today().strftime("%m/%d")) == 180
     collector.set_app_name_enabled(False)
     assert usage.app_chart.entries == ()
     assert repository.app_usage_for_period(date.today() - timedelta(days=6), date.today()) == []
@@ -64,12 +65,13 @@ def test_navigation_separates_status_report_and_settings_groups(shell):
 
 def test_recorded_zero_active_time_is_not_presented_as_missing_observation(shell):
     window, repository, collector, _tasks = shell
+    window.usage_page.period_choice.setCurrentIndex(1)
     chart = window.usage_page.week_chart
     assert all(entry.seconds is None for entry in chart.entries)
     missing = chart.empty_message
     repository.add_usage(date.today(), "IDLE", idle_seconds=120)
     collector.notify()
-    assert chart.entries[-1].seconds == 0
+    assert next(entry.seconds for entry in chart.entries if entry.label == date.today().strftime("%m/%d")) == 0
     assert "0 分钟" in chart.empty_message
     assert chart.empty_message != missing
 

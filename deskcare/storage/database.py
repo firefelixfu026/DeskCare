@@ -7,7 +7,7 @@ import os
 import re
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from deskcare.domain.types import PolicyDecision, Task, TaskDraft, TaskStatus, WellnessLevel
@@ -219,6 +219,29 @@ class UsageRepository:
                     VALUES (7, datetime('now'));
                     """
                 )
+            if 8 not in applied:
+                # Keep a recoverable pre-upgrade snapshot, never overwrite one.
+                backup = self.path.with_name(self.path.name + ".before-ui8")
+                if applied and not backup.exists():
+                    with sqlite3.connect(backup) as target:
+                        connection.backup(target)
+                connection.executescript(
+                    """BEGIN;
+                    ALTER TABLE tasks ADD COLUMN planned_for TEXT;
+                    ALTER TABLE tasks ADD COLUMN starts_at TEXT;
+                    ALTER TABLE tasks ADD COLUMN ends_at TEXT;
+                    ALTER TABLE tasks ADD COLUMN notes TEXT NOT NULL DEFAULT '';
+                    ALTER TABLE tasks ADD COLUMN time_hint TEXT NOT NULL DEFAULT '';
+                    ALTER TABLE tasks ADD COLUMN estimate_is_suggestion INTEGER NOT NULL DEFAULT 0;
+                    CREATE TABLE usage_hourly (
+                        day TEXT NOT NULL, hour INTEGER NOT NULL CHECK(hour BETWEEN 0 AND 23),
+                        category TEXT NOT NULL, active_seconds REAL NOT NULL DEFAULT 0,
+                        idle_seconds REAL NOT NULL DEFAULT 0, unknown_seconds REAL NOT NULL DEFAULT 0,
+                        PRIMARY KEY(day, hour, category)
+                    );
+                    INSERT INTO schema_migrations VALUES (8, datetime('now'));
+                    COMMIT;"""
+                )
 
     @staticmethod
     def _now() -> str:
@@ -346,6 +369,7 @@ class UsageRepository:
             for table in (
                 "usage_daily",
                 "app_usage_daily",
+                "usage_hourly",
                 "tasks",
                 "reminder_events",
                 "wellness_entries",
@@ -361,6 +385,16 @@ class UsageRepository:
             # or low-disk condition must not turn successful user deletion
             # into an application crash; future writes still use secure_delete.
             pass
+        backup = self.path.with_name(self.path.name + ".before-ui8")
+        if backup.is_file():
+            with sqlite3.connect(backup) as connection:
+                present = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                for table in ("usage_daily", "app_usage_daily", "usage_hourly", "tasks", "reminder_events",
+                              "wellness_entries", "consents", "app_settings"):
+                    if table in present:
+                        connection.execute(f"DELETE FROM {table}")
+            with sqlite3.connect(backup) as connection:
+                connection.execute("VACUUM")
 
     def add_usage(
         self,
@@ -405,6 +439,36 @@ class UsageRepository:
         with self._connect() as connection:
             connection.execute("DELETE FROM usage_daily")
             connection.execute("DELETE FROM app_usage_daily")
+            connection.execute("DELETE FROM usage_hourly")
+
+    def add_hourly_usage(self, day: date, hour: int, category: str, **durations) -> None:
+        if self.get_consent("hourly_stats") is not True:
+            return
+        values = tuple(float(durations.get(key, 0)) for key in ("active_seconds", "idle_seconds", "unknown_seconds"))
+        if not 0 <= hour <= 23 or any(value < 0 for value in values):
+            raise ValueError("Invalid hourly aggregate")
+        with self._connect() as connection:
+            connection.execute(
+                """INSERT INTO usage_hourly VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(day, hour, category) DO UPDATE SET
+                active_seconds=active_seconds+excluded.active_seconds,
+                idle_seconds=idle_seconds+excluded.idle_seconds,
+                unknown_seconds=unknown_seconds+excluded.unknown_seconds""",
+                (day.isoformat(), hour, category, *values),
+            )
+            connection.execute("DELETE FROM usage_hourly WHERE day < ?", ((day - timedelta(days=29)).isoformat(),))
+
+    def hourly_usage(self, day: date) -> list[dict]:
+        if self.get_consent("hourly_stats") is not True:
+            return []
+        with self._connect() as connection:
+            return [dict(row) for row in connection.execute(
+                "SELECT * FROM usage_hourly WHERE day=? ORDER BY hour, category", (day.isoformat(),)
+            )]
+
+    def clear_hourly_usage(self) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM usage_hourly")
 
     def add_app_usage(self, day: date | str, app_id: str, active_seconds: float) -> None:
         """Persist only a bounded executable stem and its active duration."""
@@ -468,7 +532,24 @@ class UsageRepository:
             confirmed_at=parse(row["confirmed_at"]),
             completed_at=parse(row["completed_at"]),
             source=str(row["source"]),
+            planned_for=date.fromisoformat(row["planned_for"]) if row["planned_for"] else None,
+            starts_at=parse(row["starts_at"]), ends_at=parse(row["ends_at"]),
+            notes=row["notes"], time_hint=row["time_hint"],
+            estimate_is_suggestion=bool(row["estimate_is_suggestion"]),
         )
+
+    @staticmethod
+    def _task_details(planned_for=None, starts_at=None, ends_at=None, notes="", time_hint="", estimate_is_suggestion=False):
+        if planned_for is not None and not isinstance(planned_for, date):
+            raise ValueError("任务日期无效")
+        if len(notes) > 4000 or len(time_hint) > 1000:
+            raise ValueError("备注或时间说明过长")
+        if ends_at and (not starts_at or ends_at <= starts_at):
+            raise ValueError("结束时间必须晚于开始时间")
+        return (planned_for.isoformat() if planned_for else None,
+                starts_at.astimezone().isoformat(timespec="minutes") if starts_at else None,
+                ends_at.astimezone().isoformat(timespec="minutes") if ends_at else None,
+                notes, time_hint, int(bool(estimate_is_suggestion)))
 
     @staticmethod
     def _task_values(
@@ -505,31 +586,33 @@ class UsageRepository:
         normalized: set[str] = set()
         values = []
         for draft in drafts:
-            key = " ".join(draft.title.casefold().split())
+            key = (" ".join(draft.title.casefold().split()), draft.planned_for, draft.due_at, draft.starts_at)
             if key in normalized:
                 raise ValueError("duplicate task titles must be resolved before confirmation")
             normalized.add(key)
             title, due_at, estimate, confirmed_at, created_at, safe_source = self._task_values(
                 draft.title, draft.due_at, draft.estimated_minutes, source
             )
-            values.append((title, due_at, estimate, confirmed_at, safe_source, created_at))
+            details = self._task_details(draft.planned_for, draft.starts_at, draft.ends_at,
+                                         draft.notes, draft.time_hint, draft.estimate_is_suggestion)
+            values.append((title, due_at, estimate, confirmed_at, safe_source, created_at, details))
         if not values:
             return []
         with self._connect() as connection:
             inserted_ids: list[int] = []
-            for title, due_at, estimate, confirmed_at, safe_source, created_at in values:
+            for title, due_at, estimate, confirmed_at, safe_source, created_at, details in values:
                 cursor = connection.execute(
                     """INSERT INTO tasks(
                            title, due_at, estimated_minutes, status,
-                           confirmed_at, source, created_at, updated_at
-                       ) VALUES (?, ?, ?, 'todo', ?, ?, ?, ?)""",
-                    (title, due_at, estimate, confirmed_at, safe_source, created_at, confirmed_at),
+                           confirmed_at, source, created_at, updated_at,
+                           planned_for, starts_at, ends_at, notes, time_hint, estimate_is_suggestion
+                       ) VALUES (?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (title, due_at, estimate, confirmed_at, safe_source, created_at, confirmed_at, *details),
                 )
                 inserted_ids.append(int(cursor.lastrowid))
             placeholders = ",".join("?" for _ in inserted_ids)
             rows = connection.execute(
-                f"""SELECT id, title, due_at, estimated_minutes, status,
-                           confirmed_at, completed_at, source
+                f"""SELECT *
                     FROM tasks WHERE id IN ({placeholders})
                     ORDER BY id""",
                 tuple(inserted_ids),
@@ -542,36 +625,26 @@ class UsageRepository:
         due_at: datetime | None = None,
         estimated_minutes: int | None = None,
         source: str = "manual",
+        **details,
     ) -> Task:
-        values = self._task_values(title, due_at, estimated_minutes, source)
-        with self._connect() as connection:
-            cursor = connection.execute(
-                """INSERT INTO tasks(
-                       title, due_at, estimated_minutes, status,
-                       confirmed_at, source, created_at, updated_at
-                   ) VALUES (?, ?, ?, 'todo', ?, ?, ?, ?)""",
-                (values[0], values[1], values[2], values[3], values[5], values[4], values[3]),
-            )
-            row = connection.execute(
-                """SELECT id, title, due_at, estimated_minutes, status,
-                          confirmed_at, completed_at, source
-                   FROM tasks WHERE id = ?""",
-                (cursor.lastrowid,),
-            ).fetchone()
-        return self._task_from_row(row)
+        return self.confirm_tasks([TaskDraft(title, due_at, estimated_minutes, **details)], source)[0]
 
     def tasks_for_day(self, day: date | str | None = None) -> list[Task]:
         day_text = (day or date.today()).isoformat() if not isinstance(day, str) else day
         with self._connect() as connection:
             rows = connection.execute(
-                """SELECT id, title, due_at, estimated_minutes, status,
-                          confirmed_at, completed_at, source
+                """SELECT *
                    FROM tasks
-                   WHERE substr(confirmed_at, 1, 10) = ?
-                      OR (due_at IS NOT NULL AND substr(due_at, 1, 10) = ?)
+                   WHERE COALESCE(planned_for, substr(starts_at,1,10), substr(due_at,1,10), substr(confirmed_at,1,10)) = ?
+                      OR substr(completed_at,1,10) = ?
                    ORDER BY CASE WHEN due_at IS NULL THEN 1 ELSE 0 END, due_at, id""",
                 (day_text, day_text),
             ).fetchall()
+        return [self._task_from_row(row) for row in rows]
+
+    def all_tasks(self) -> list[Task]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT * FROM tasks ORDER BY COALESCE(planned_for, substr(starts_at,1,10), substr(due_at,1,10), substr(confirmed_at,1,10)), id").fetchall()
         return [self._task_from_row(row) for row in rows]
 
     def update_task(
@@ -581,6 +654,7 @@ class UsageRepository:
         title: str,
         due_at: datetime | None = None,
         estimated_minutes: int | None = None,
+        **details,
     ) -> Task:
         values = self._task_values(title, due_at, estimated_minutes, "manual")
         with self._connect() as connection:
@@ -590,11 +664,18 @@ class UsageRepository:
                 (values[0], values[1], values[2], values[3], task_id),
             )
             row = connection.execute(
-                """SELECT id, title, due_at, estimated_minutes, status,
-                          confirmed_at, completed_at, source
+                """SELECT *
                    FROM tasks WHERE id = ?""",
                 (task_id,),
             ).fetchone()
+            if row is not None and details:
+                current = self._task_from_row(row)
+                merged = {name: details.get(name, getattr(current, name)) for name in
+                          ("planned_for", "starts_at", "ends_at", "notes", "time_hint", "estimate_is_suggestion")}
+                values_extra = self._task_details(**merged)
+                connection.execute("""UPDATE tasks SET planned_for=?, starts_at=?, ends_at=?, notes=?,
+                                   time_hint=?, estimate_is_suggestion=? WHERE id=?""", (*values_extra, task_id))
+                row = connection.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
         if row is None:
             raise KeyError(task_id)
         return self._task_from_row(row)
@@ -609,8 +690,7 @@ class UsageRepository:
                 (status.value, completed_at, self._now(), task_id),
             )
             row = connection.execute(
-                """SELECT id, title, due_at, estimated_minutes, status,
-                          confirmed_at, completed_at, source
+                """SELECT *
                    FROM tasks WHERE id = ?""",
                 (task_id,),
             ).fetchone()
