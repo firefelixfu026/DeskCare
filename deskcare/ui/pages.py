@@ -115,6 +115,7 @@ class _LocalModelProbeWorker(QObject):
 
 
 class TodayPage(QWidget):
+    reminder_advice_requested = Signal()
     def __init__(self, controller, task_service=None, reminder_coordinator=None, local_ai_service=None, repository=None, cloud_ai_service=None, parent=None) -> None:
         super().__init__(parent)
         self.controller = controller
@@ -185,6 +186,21 @@ class TodayPage(QWidget):
         reminder_layout.addLayout(reminder_actions)
         root.addWidget(self.reminder_card)
         self.reminder_card.setVisible(False)
+
+        self.feedback_review = QFrame()
+        self.feedback_review.setObjectName("card")
+        review_layout = QHBoxLayout(self.feedback_review)
+        self.feedback_review_text = label("", "mutedText")
+        review_layout.addWidget(self.feedback_review_text, 1)
+        review_button = QPushButton("看看提醒安排")
+        review_button.setObjectName("secondaryButton")
+        review_button.clicked.connect(self.reminder_advice_requested.emit)
+        review_layout.addWidget(review_button)
+        root.addWidget(self.feedback_review)
+        self.feedback_review.hide()
+        personalization = getattr(self.reminder_coordinator, "personalization_service", None)
+        if personalization:
+            personalization.subscribe(self._sync_feedback_review)
 
         task_frame = QFrame()
         task_frame.setObjectName("card")
@@ -567,6 +583,10 @@ class TodayPage(QWidget):
         self.activity_tip.setVisible(show_tip)
         if show_tip:
             self.activity_tip.setText(ACTIVITY_TIPS[datetime.now().minute % len(ACTIVITY_TIPS)])
+
+    def _sync_feedback_review(self, snapshot):
+        self.feedback_review.setVisible(snapshot.suggested_minutes is not None)
+        self.feedback_review_text.setText(snapshot.explanation)
 
     def _sync(self, enabled: bool, paused: bool) -> None:
         if not enabled:
@@ -1108,6 +1128,7 @@ class SettingsPage(QWidget):
     reminder_interval_changed = Signal(int)
     test_reminder_requested = Signal()
     open_journal_requested = Signal()
+    reminder_advice_requested = Signal()
 
     def __init__(self, config_store, controller, collector=None, bodylog_service=None, local_ai_service=None, personalization_service=None, repository=None, cloud_ai_service=None, parent=None) -> None:
         super().__init__(parent)
@@ -1246,9 +1267,9 @@ class SettingsPage(QWidget):
         personalization_card.setObjectName("card")
         personalization_layout = QVBoxLayout(personalization_card)
         personalization_layout.setContentsMargins(14, 10, 14, 10)
-        personalization_layout.addWidget(label("让休息提醒参考我的反馈", "cardTitle"))
+        personalization_layout.addWidget(label("提醒安排与反馈", "cardTitle"))
         self.reminder_personalization = QCheckBox(
-            "允许 DeskCare 参考我的反馈，减少不合时宜的提醒（默认关闭）"
+            "根据提醒反馈，建议我调整间隔（不自动修改）"
         )
         self.reminder_personalization.setChecked(
             personalization_service.enabled if personalization_service is not None else False
@@ -1263,7 +1284,19 @@ class SettingsPage(QWidget):
             "mutedText",
         )
         personalization_layout.addWidget(self.personalization_feedback)
-        self.reset_personalization = QPushButton("恢复默认提醒参数")
+        advice_actions = QHBoxLayout()
+        self.analyze_reminder = QPushButton("分析当前提醒安排")
+        self.analyze_reminder.setEnabled(self.repository is not None)
+        self.analyze_reminder.clicked.connect(self.reminder_advice_requested.emit)
+        advice_actions.addWidget(self.analyze_reminder)
+        self.defer_feedback_review = QPushButton("暂不调整")
+        self.defer_feedback_review.setObjectName("secondaryButton")
+        self.defer_feedback_review.setEnabled(False)
+        self.defer_feedback_review.clicked.connect(lambda: self.personalization_service.dismiss_current_suggestion())
+        advice_actions.addWidget(self.defer_feedback_review)
+        advice_actions.addStretch()
+        personalization_layout.addLayout(advice_actions)
+        self.reset_personalization = QPushButton("关闭反馈建议")
         self.reset_personalization.setSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
@@ -1610,6 +1643,7 @@ class SettingsPage(QWidget):
         self.reminder_personalization.setEnabled(snapshot.eligible)
         self.reset_personalization.setEnabled(snapshot.enabled)
         self.personalization_feedback.setText(snapshot.explanation)
+        self.defer_feedback_review.setEnabled(snapshot.suggested_minutes is not None)
 
     def _sync_local_ai(self, enabled: bool) -> None:
         self.local_ai.blockSignals(True)

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
+import math
 
 from deskcare.domain.break_policy import BreakPolicyConfig
 
@@ -31,14 +32,15 @@ class PersonalizationSnapshot:
     effective_candidate_minutes: int
     applied: bool
     explanation: str
+    suggested_minutes: int | None = None
 
 
 class ReminderPersonalizationService:
-    """Apply one conservative 5-minute step after enough real feedback.
+    """Suggest an interval review; never silently change the user's setting.
 
-    Only an explicit ``BAD_TIMING`` response can make reminders less frequent.
-    It never makes reminders more frequent, changes hard gates, or infers a
-    health state. Demo-provider feedback is ineligible by construction.
+    Only explicit ``BAD_TIMING`` responses can trigger an interval review.
+    It never changes intervals or hard gates, or infers a health state.
+    Demo-provider feedback is ineligible by construction.
     """
 
     CONSENT_SCOPE = "reminder_personalization"
@@ -46,7 +48,6 @@ class ReminderPersonalizationService:
     MIN_CONTEXT_SAMPLES = 5
     RECENT_LIMIT = 30
     BAD_TIMING_RATIO = 0.40
-    ADJUSTMENT_MINUTES = 5
 
     def __init__(
         self,
@@ -97,12 +98,14 @@ class ReminderPersonalizationService:
     ) -> BreakPolicyConfig:
         if self.snapshot.mode != mode:
             self.snapshot = self._calculate(mode)
-        if not self.snapshot.applied:
-            return base_config
-        return replace(
-            base_config,
-            break_candidate_minutes=self.snapshot.effective_candidate_minutes,
-        )
+        return base_config
+
+    def dismiss_current_suggestion(self) -> None:
+        """Wait for five new responses in this context before asking again."""
+        events = self.repository.recent_reminder_events(limit=self.RECENT_LIMIT, responded_only=True)
+        latest = max((event.id for event in events if event.mode == self.snapshot.mode), default=0)
+        self.repository.set_setting(f"reminder_reviewed_{self.snapshot.mode}", str(latest))
+        self.refresh(self.snapshot.mode)
 
     def _calculate(self, mode: str) -> PersonalizationSnapshot:
         mode_label = MODE_LABELS.get(mode, mode)
@@ -128,7 +131,7 @@ class ReminderPersonalizationService:
                 len(context_events),
                 bad_timing_count,
                 False,
-                "个性化已关闭，提醒候选窗口保持默认；历史反馈不会被删除。",
+                "反馈建议已关闭，仍按你设置的间隔提醒。历史反馈保留。",
             )
         if len(events) < self.MIN_TOTAL_SAMPLES:
             return self._snapshot(
@@ -137,7 +140,7 @@ class ReminderPersonalizationService:
                 len(context_events),
                 bad_timing_count,
                 False,
-                f"反馈样本 {len(events)}/{self.MIN_TOTAL_SAMPLES}，资料不足，尚未调整提醒参数。",
+                f"已收到 {len(events)} 条反馈，满 {self.MIN_TOTAL_SAMPLES} 条后再评估；不会自动改间隔。",
             )
         if len(context_events) < self.MIN_CONTEXT_SAMPLES:
             return self._snapshot(
@@ -146,7 +149,7 @@ class ReminderPersonalizationService:
                 len(context_events),
                 bad_timing_count,
                 False,
-                f"共有 {len(events)} 条反馈，但{mode_label}情境只有 {len(context_events)}/{self.MIN_CONTEXT_SAMPLES} 条，保持默认。",
+                f"共 {len(events)} 条反馈，{mode_label}情境 {len(context_events)}/{self.MIN_CONTEXT_SAMPLES} 条；暂不建议调整。",
             )
         ratio = bad_timing_count / len(context_events)
         if ratio < self.BAD_TIMING_RATIO:
@@ -156,9 +159,19 @@ class ReminderPersonalizationService:
                 len(context_events),
                 bad_timing_count,
                 False,
-                f"{mode_label}情境最近 {len(context_events)} 条反馈中有 {bad_timing_count} 次“时机不合适”，保持默认。",
+                f"{mode_label}情境最近 {len(context_events)} 条反馈中有 {bad_timing_count} 次“时机不合适”，保持当前间隔。",
             )
-        effective = self.base_candidate_minutes + self.ADJUSTMENT_MINUTES
+        try:
+            reviewed = int(self.repository.get_setting(f"reminder_reviewed_{mode}", "0"))
+        except (TypeError, ValueError):
+            reviewed = 0
+        if reviewed and sum(event.id > reviewed for event in context_events) < self.MIN_CONTEXT_SAMPLES:
+            return self._snapshot(mode, len(events), len(context_events), bad_timing_count, False,
+                                  "已处理这次建议，收到 5 条新的同情境反馈后再评估。")
+        suggested = min(180, int(math.ceil(self.base_candidate_minutes * (1.5 if ratio >= .7 else 1.25) / 5) * 5))
+        if suggested <= self.base_candidate_minutes:
+            return self._snapshot(mode, len(events), len(context_events), bad_timing_count, False,
+                                  "提醒间隔已达上限；可以按工作安排切换专注、会议或安静模式。")
         return PersonalizationSnapshot(
             enabled=True,
             eligible=True,
@@ -169,12 +182,13 @@ class ReminderPersonalizationService:
             required_samples=self.MIN_TOTAL_SAMPLES,
             required_context_samples=self.MIN_CONTEXT_SAMPLES,
             base_candidate_minutes=self.base_candidate_minutes,
-            effective_candidate_minutes=effective,
-            applied=True,
+            effective_candidate_minutes=self.base_candidate_minutes,
+            applied=False,
             explanation=(
-                f"{mode_label}情境最近 {len(context_events)} 条反馈中有 {bad_timing_count} 次“时机不合适”；"
-                f"候选窗口从 {self.base_candidate_minutes} 调整为 {effective} 分钟。"
+                f"{mode_label}情境最近 {len(context_events)} 条反馈中，{bad_timing_count} 次认为时机不合适。"
+                f"要不要把间隔从 {self.base_candidate_minutes} 改为 {suggested} 分钟？也可以先分析当前安排；不会自动修改。"
             ),
+            suggested_minutes=suggested,
         )
 
     def _snapshot(

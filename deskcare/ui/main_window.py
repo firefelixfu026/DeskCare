@@ -22,6 +22,9 @@ from deskcare.ui.theme import STYLE, apply_theme
 from deskcare.ui.icons import navigation_icon
 from deskcare.ui.reminder_popup import ReminderPopup
 from deskcare.services.health_journal_service import HealthJournalService
+from deskcare.services.reminder_advice import ReminderAdviceService
+from deskcare.ai.reminder_advisor import ReminderAIAdvisor
+from deskcare.ui.reminder_advice import ReminderAdviceDialog
 
 
 class MainWindow(QMainWindow):
@@ -52,6 +55,9 @@ class MainWindow(QMainWindow):
         self.cloud_ai_service = cloud_ai_service
         self.personalization_service = personalization_service
         self.health_journal_service = HealthJournalService(repository, task_service) if repository is not None else None
+        self.reminder_advice_service = (ReminderAdviceService(repository, reminder_coordinator, task_service)
+                                       if repository is not None and reminder_coordinator is not None else None)
+        self._reminder_advice_dialog = None
         self._allow_close = False
         self._shutting_down = False
         self.reminder_popup = ReminderPopup()
@@ -102,7 +108,7 @@ class MainWindow(QMainWindow):
         self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation, 1)
-        version = QLabel("DeskCare · UI10")
+        version = QLabel("DeskCare · UI11")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
@@ -187,6 +193,8 @@ class MainWindow(QMainWindow):
             self.reminder_coordinator.subscribe(self._sync_desktop_reminder)
         self.settings_page.test_reminder_requested.connect(self._preview_reminder)
         self.settings_page.open_journal_requested.connect(self._open_health_journal)
+        self.settings_page.reminder_advice_requested.connect(self._open_reminder_advice)
+        self.today_page.reminder_advice_requested.connect(self._open_reminder_advice)
         content_layout.addWidget(self.pages)
         self.navigation.setCurrentRow(0)
         shell_layout.addWidget(sidebar)
@@ -242,6 +250,21 @@ class MainWindow(QMainWindow):
         self.navigation.setCurrentRow(2)
         self.reports_page.status_sections.setCurrentIndex(1)
 
+    def _open_reminder_advice(self):
+        if self.reminder_advice_service is None:
+            return
+        if self._reminder_advice_dialog is None:
+            advisor = ReminderAIAdvisor(self.reminder_advice_service, self.local_ai_service, self.cloud_ai_service)
+            self._reminder_advice_dialog = ReminderAdviceDialog(self.reminder_advice_service, advisor, self)
+            self._reminder_advice_dialog.interval_applied.connect(self._sync_advised_interval)
+        self._reminder_advice_dialog.begin()
+
+    def _sync_advised_interval(self, minutes):
+        self.settings_page.reminder_interval.blockSignals(True)
+        self.settings_page.reminder_interval.setValue(minutes)
+        self.settings_page.reminder_interval.blockSignals(False)
+        self.config_store.config.break_candidate_minutes = minutes
+
     def _show_journal_task(self, task) -> None:
         self.navigation.setCurrentRow(0)
         self.today_page._show_task(task)
@@ -278,6 +301,8 @@ class MainWindow(QMainWindow):
         self.header_state.style().polish(self.header_state)
 
     def _refresh_after_data_clear(self) -> None:
+        if self._reminder_advice_dialog is not None:
+            self._reminder_advice_dialog.reject()
         if self.reminder_coordinator is not None:
             self.reminder_coordinator.reset_after_data_clear()
         self.settings_page.reminder_interval.blockSignals(True)

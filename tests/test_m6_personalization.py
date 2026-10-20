@@ -43,7 +43,7 @@ def test_personalization_requires_consent_and_ten_real_feedback_samples(tmp_path
     assert service.snapshot.sample_count == 9
     assert service.snapshot.applied is False
     assert service.effective_config(base, "normal").break_candidate_minutes == 40
-    assert "9/10" in service.snapshot.explanation
+    assert "9 条" in service.snapshot.explanation
 
 
 def test_personalization_is_context_specific_and_only_reduces_frequency(tmp_path):
@@ -55,9 +55,10 @@ def test_personalization_is_context_specific_and_only_reduces_frequency(tmp_path
     base = BreakPolicyConfig()
 
     normal = service.refresh("normal")
-    assert normal.applied is True
+    assert normal.applied is False
     assert normal.bad_timing_count == 4
-    assert service.effective_config(base, "normal").break_candidate_minutes == 45
+    assert normal.suggested_minutes == 50
+    assert service.effective_config(base, "normal").break_candidate_minutes == 40
 
     focus = service.refresh("focus")
     assert focus.applied is False
@@ -86,7 +87,7 @@ def test_personalization_reset_preserves_feedback_and_demo_is_ineligible(tmp_pat
     assert "演示数据不会" in demo.snapshot.explanation
 
 
-def test_personalization_is_applied_by_coordinator_without_weakening_hard_gates(tmp_path):
+def test_personalization_suggests_without_automatically_changing_coordinator_or_hard_gates(tmp_path):
     repository = UsageRepository(tmp_path / "deskcare.sqlite3")
     for index in range(10):
         _add_feedback(
@@ -116,8 +117,9 @@ def test_personalization_is_applied_by_coordinator_without_weakening_hard_gates(
     )
     collector.continuous_active_seconds = 42 * 60
 
-    below_adjusted_threshold = coordinator.evaluate(now=now, is_recent_switch=True)
-    assert below_adjusted_threshold.decision.reason_codes == ("BELOW_THRESHOLD",)
+    at_original_threshold = coordinator.evaluate(now=now, is_recent_switch=True)
+    assert at_original_threshold.visible
+    assert coordinator.policy.config.break_candidate_minutes == 40
 
     controller.set_paused(True)
     collector.continuous_active_seconds = 100 * 60
