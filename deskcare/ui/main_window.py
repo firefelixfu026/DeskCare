@@ -28,6 +28,8 @@ from deskcare.ai.reminder_advisor import ReminderAIAdvisor
 from deskcare.ui.reminder_advice import ReminderAdviceDialog
 from deskcare.services.assistant_service import AssistantService
 from deskcare.ui.assistant import AssistantDialog
+from deskcare.services.lab_reading_service import LabReadingService
+from deskcare.ui.lab_reading import LabReadingDialog
 
 
 class MainWindow(QMainWindow):
@@ -65,6 +67,8 @@ class MainWindow(QMainWindow):
                                                   local_ai_service, cloud_ai_service)
                                   if self.reminder_advice_service is not None and task_service is not None else None)
         self._assistant_dialog = None
+        self.lab_reading_service = LabReadingService(repository, local_ai_service, cloud_ai_service) if repository is not None else None
+        self._lab_dialog = None
         self._allow_close = False
         self._shutting_down = False
         self.reminder_popup = ReminderPopup()
@@ -115,7 +119,7 @@ class MainWindow(QMainWindow):
         self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation, 1)
-        version = QLabel("DeskCare · UI12")
+        version = QLabel("DeskCare · UI13")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
@@ -128,6 +132,11 @@ class MainWindow(QMainWindow):
         self.header_title.setObjectName("headerTitle")
         header.addWidget(self.header_title)
         header.addStretch()
+        self.lab_button = QPushButton("检验单阅读")
+        self.lab_button.setObjectName("secondaryButton")
+        self.lab_button.setEnabled(self.lab_reading_service is not None)
+        self.lab_button.clicked.connect(self._open_lab)
+        header.addWidget(self.lab_button)
         self.assistant_button = QPushButton("AI 助手")
         self.assistant_button.setObjectName("secondaryButton")
         self.assistant_button.setEnabled(self.assistant_service is not None)
@@ -289,12 +298,21 @@ class MainWindow(QMainWindow):
         self._assistant_dialog.begin()
 
     def _assistant_open_view(self, view):
-        if view == "advice":
+        if view == "lab":
+            self._open_lab()
+        elif view == "advice":
             self._open_reminder_advice()
         elif view in {"today", "usage"}:
             self.navigation.setCurrentRow(0 if view == "today" else 1)
             self._show_main_window()
             self._assistant_dialog.hide()
+
+    def _open_lab(self):
+        if self.lab_reading_service is None:
+            return
+        if self._lab_dialog is None:
+            self._lab_dialog = LabReadingDialog(self.lab_reading_service, self)
+        self._lab_dialog.begin()
 
     def _sync_advised_interval(self, minutes):
         edit = self.settings_page.reminder_interval
@@ -340,6 +358,11 @@ class MainWindow(QMainWindow):
         self.header_state.style().polish(self.header_state)
 
     def _refresh_after_data_clear(self) -> None:
+        if self.lab_reading_service is not None:
+            self.lab_reading_service.clear()
+        if self._lab_dialog is not None:
+            self._lab_dialog.reject()
+            self._lab_dialog.begin_state()
         if self.assistant_service is not None:
             self.assistant_service.invalidate()
         if self._assistant_dialog is not None:

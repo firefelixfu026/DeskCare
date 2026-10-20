@@ -21,7 +21,7 @@ TEXT_SUFFIXES = {".py", ".md", ".txt", ".toml", ".ps1", ".cmd", ".json", ".svg",
 SOURCE_DIRS = {
     "deskcare": {".py"}, "tests": {".py"}, "scripts": {".py", ".ps1"},
     "docs": {".md"}, "examples": {".md", ".txt", ".csv", ".xlsx", ".json"},
-    "assets": {".png", ".svg", ".md"}, "design": {".json"},
+    "assets": {".png", ".svg", ".md", ".ps1"}, "design": {".json"},
     "submission": {".md", ".cmd"},
 }
 SECRET_PATTERNS = (
