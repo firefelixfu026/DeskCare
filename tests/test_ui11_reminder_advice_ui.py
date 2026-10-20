@@ -102,7 +102,7 @@ def test_local_rule_interval_can_be_applied_without_ai_consent(dialog, monkeypat
     assert page.apply_button.isEnabled()
     monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
     page.apply_button.click()
-    assert s.coord.policy.config.break_candidate_minutes == 50
+    assert s.coord.policy.config.break_candidate_minutes == 60
     assert not s.service.enabled and not calls
     assert s.personal.snapshot.suggested_minutes is None
 

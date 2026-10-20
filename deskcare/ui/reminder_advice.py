@@ -76,6 +76,7 @@ class ReminderAdviceDialog(QDialog):
         self.context_summary.setTextFormat(Qt.TextFormat.PlainText)
         self.context_summary.setWordWrap(True)
         self.consent = QCheckBox("允许将本次选定的情境提供给 AI 分析（独立授权）")
+        self.consent.setObjectName("aiConsent")
         self.consent.setChecked(service.enabled)
         self.consent.toggled.connect(self._consent_changed)
         input_layout.addWidget(self.consent)
@@ -96,7 +97,7 @@ class ReminderAdviceDialog(QDialog):
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
         self.preview.setMinimumHeight(100)
-        self.preview.setPlaceholderText("预览后才可确认发送。不会包含服务密钥、应用轨迹、任务备注或历史不适记录。")
+        self.preview.setPlaceholderText("这里会用普通文字列出本次提供的信息。先开启上方授权，再预览并确认发送。")
         input_layout.addWidget(self.preview, 1)
         self.result = QPlainTextEdit()
         self.result.setReadOnly(True)
@@ -232,11 +233,11 @@ class ReminderAdviceDialog(QDialog):
             self.status.setText(str(exc))
             return
         self._request = request
-        self.preview.setPlainText(request.preview())
+        self.preview.setPlainText(request.human_preview())
         self.details.setCurrentIndex(1)
         self.destination.setText(f"发送到：{request.endpoint}  ·  模型：{request.model}\n" + self.destination.text())
         self.send_button.setEnabled(self.service.enabled)
-        self.status.setText("上方为将发送的完整正文。请核对；服务密钥仅用于请求认证，不在正文中。")
+        self.status.setText("请核对本次提供的信息。" + ("确认后才会发送。" if self.service.enabled else "请先开启上方的提醒分析授权，再重新预览。"))
 
     def send_request(self):
         if self._request is None or not self.service.enabled or self._thread is not None:
@@ -306,7 +307,8 @@ class ReminderAdviceDialog(QDialog):
             return
         self.interval_applied.emit(minutes)
         self.refresh_context()
-        self.status.setText(f"已按你的确认改为 {minutes} 分钟。")
+        actual = self.service.coordinator.policy.config.break_candidate_minutes
+        self.status.setText(f"已保存：当前提醒间隔为 {actual} 分钟。设置页已同步；仍会在方便的间隙择机提醒。")
 
     def reject(self):
         self._discard = True

@@ -4,7 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
-import math
 
 from deskcare.domain.types import TaskStatus
 
@@ -99,9 +98,9 @@ class ReminderAdviceService:
         except (TypeError, ValueError):
             reviewed = 0
         base = coord.policy.config.break_candidate_minutes
-        choices = sorted({base, *(
-            max(1, min(180, int(math.ceil(base * factor / 5) * 5)))
-            for factor in (.75, 1.25, 1.5))})
+        # These are product choices, not medical recommendations. Never anchor
+        # AI advice to an accidentally tiny testing interval (e.g. 1 minute).
+        choices = [20, 25, 30, 40, 45, 50, 60]
         sample = coord.collector.latest_sample
         usable = bool(sample is not None and sample.observation_ok and sample.idle_s is not None
                       and sample.idle_s < 60 and sample.state.value == "active")
@@ -170,10 +169,14 @@ class ReminderAdviceService:
             return ReminderAdvice("break_at_gap", ("comfort",))
         feedback = data["feedback"]
         longer = [v for v in data["interval_choices"] if v > data["interval_minutes"]]
+        if data["interval_minutes"] < 15:
+            return ReminderAdvice("review_interval", ("mode", "activity"), 40)
         if (feedback["total"] >= 10 and feedback["context_count"] >= 5 and longer
                 and not feedback["review_already_handled"]
                 and feedback["bad_timing"] / feedback["context_count"] >= .4):
-            return ReminderAdvice("review_interval", ("feedback",), longer[0])
+            ratio = feedback["bad_timing"] / feedback["context_count"]
+            target = data["interval_minutes"] * (1.5 if ratio >= .7 else 1.25)
+            return ReminderAdvice("review_interval", ("feedback",), min(longer, key=lambda value: abs(value-target)))
         if "deadline" in evidence or (data["selected_task"] and data["mode"] == "focus"):
             return ReminderAdvice("finish_step", tuple(k for k in ("mode", "task", "deadline") if k in evidence))
         if data["active_minutes_estimate"] >= data["interval_minutes"]:
@@ -205,6 +208,10 @@ class ReminderAdviceService:
                 raise AdviceError("AI 建议的间隔超出本次允许范围，保留本机建议。")
             if data["feedback"]["review_already_handled"] and set(evidence) <= {"mode", "feedback"}:
                 raise AdviceError("这批反馈的建议已处理，不能据此反复要求延长间隔。")
+            if set(evidence) <= {"feedback"}:
+                feedback = data["feedback"]
+                if feedback["total"] < 10 or feedback["context_count"] < 5 or feedback["bad_timing"] == 0:
+                    raise AdviceError("这些反馈不足以支持调整间隔，请结合任务或当前设置重新分析。")
         elif interval is not None:
             raise AdviceError("AI 输出了与建议不一致的间隔，保留本机建议。")
         return ReminderAdvice(action, tuple(evidence), interval, source)
@@ -220,4 +227,9 @@ class ReminderAdviceService:
                                    "interval_minutes": advice.interval_minutes}, context, source=advice.source)
         self.coordinator.set_interval(validated.interval_minutes)
         if self.coordinator.personalization_service:
-            self.coordinator.personalization_service.dismiss_current_suggestion()
+            try:
+                self.coordinator.personalization_service.dismiss_current_suggestion()
+            except Exception:
+                # The primary setting is already persisted and broadcast. A
+                # review-bookmark failure must not hide a successful change.
+                pass

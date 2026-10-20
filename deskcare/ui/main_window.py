@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -25,6 +26,8 @@ from deskcare.services.health_journal_service import HealthJournalService
 from deskcare.services.reminder_advice import ReminderAdviceService
 from deskcare.ai.reminder_advisor import ReminderAIAdvisor
 from deskcare.ui.reminder_advice import ReminderAdviceDialog
+from deskcare.services.assistant_service import AssistantService
+from deskcare.ui.assistant import AssistantDialog
 
 
 class MainWindow(QMainWindow):
@@ -58,6 +61,10 @@ class MainWindow(QMainWindow):
         self.reminder_advice_service = (ReminderAdviceService(repository, reminder_coordinator, task_service)
                                        if repository is not None and reminder_coordinator is not None else None)
         self._reminder_advice_dialog = None
+        self.assistant_service = (AssistantService(repository, reminder_coordinator, task_service,
+                                                  local_ai_service, cloud_ai_service)
+                                  if self.reminder_advice_service is not None and task_service is not None else None)
+        self._assistant_dialog = None
         self._allow_close = False
         self._shutting_down = False
         self.reminder_popup = ReminderPopup()
@@ -108,7 +115,7 @@ class MainWindow(QMainWindow):
         self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation, 1)
-        version = QLabel("DeskCare · UI11")
+        version = QLabel("DeskCare · UI12")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
@@ -121,6 +128,11 @@ class MainWindow(QMainWindow):
         self.header_title.setObjectName("headerTitle")
         header.addWidget(self.header_title)
         header.addStretch()
+        self.assistant_button = QPushButton("AI 助手")
+        self.assistant_button.setObjectName("secondaryButton")
+        self.assistant_button.setEnabled(self.assistant_service is not None)
+        self.assistant_button.clicked.connect(self._open_assistant)
+        header.addWidget(self.assistant_button)
         self.header_state = QLabel()
         self.header_state.setObjectName("headerState")
         header.addWidget(self.header_state)
@@ -227,6 +239,15 @@ class MainWindow(QMainWindow):
         self.reminder_popup.present(preview=True, show_tip=self.settings_page.activity_tips.isChecked())
 
     def _sync_desktop_reminder(self, snapshot) -> None:
+        # Any writer (form, AI, assistant) must refresh the same authoritative
+        # coordinator value, not only paths that happen to emit a UI signal.
+        self._sync_advised_interval(self.reminder_coordinator.policy.config.break_candidate_minutes)
+        combo = self.today_page.context_mode
+        mode_index = combo.findData(self.reminder_coordinator.mode)
+        if combo.currentIndex() != mode_index:
+            combo.blockSignals(True)
+            combo.setCurrentIndex(mode_index)
+            combo.blockSignals(False)
         self.settings_page.reminder_status.setText(self.reminder_coordinator.status_text())
         if not snapshot.visible:
             if not self.reminder_popup.preview:
@@ -259,10 +280,28 @@ class MainWindow(QMainWindow):
             self._reminder_advice_dialog.interval_applied.connect(self._sync_advised_interval)
         self._reminder_advice_dialog.begin()
 
+    def _open_assistant(self):
+        if self.assistant_service is None:
+            return
+        if self._assistant_dialog is None:
+            self._assistant_dialog = AssistantDialog(self.assistant_service, self)
+            self._assistant_dialog.open_view_requested.connect(self._assistant_open_view)
+        self._assistant_dialog.begin()
+
+    def _assistant_open_view(self, view):
+        if view == "advice":
+            self._open_reminder_advice()
+        elif view in {"today", "usage"}:
+            self.navigation.setCurrentRow(0 if view == "today" else 1)
+            self._show_main_window()
+            self._assistant_dialog.hide()
+
     def _sync_advised_interval(self, minutes):
-        self.settings_page.reminder_interval.blockSignals(True)
-        self.settings_page.reminder_interval.setValue(minutes)
-        self.settings_page.reminder_interval.blockSignals(False)
+        edit = self.settings_page.reminder_interval
+        if edit.value() != minutes:
+            edit.blockSignals(True)
+            edit.setValue(minutes)
+            edit.blockSignals(False)
         self.config_store.config.break_candidate_minutes = minutes
 
     def _show_journal_task(self, task) -> None:
@@ -301,6 +340,10 @@ class MainWindow(QMainWindow):
         self.header_state.style().polish(self.header_state)
 
     def _refresh_after_data_clear(self) -> None:
+        if self.assistant_service is not None:
+            self.assistant_service.invalidate()
+        if self._assistant_dialog is not None:
+            self._assistant_dialog.reject()
         if self._reminder_advice_dialog is not None:
             self._reminder_advice_dialog.reject()
         if self.reminder_coordinator is not None:

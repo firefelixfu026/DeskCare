@@ -101,7 +101,7 @@ def test_context_threshold_and_upper_bound(setup):
     s.coord.set_mode("normal")
     s.coord.set_interval(180)
     assert s.personal.snapshot.suggested_minutes is None
-    assert max(s.service.capture().data["interval_choices"]) == 180
+    assert s.service.capture().data["interval_choices"] == [20, 25, 30, 40, 45, 50, 60]
     s.personal.set_enabled(False)
     assert s.service.capture().data["feedback"]["total"] == 0
 

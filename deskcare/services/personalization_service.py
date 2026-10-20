@@ -168,7 +168,8 @@ class ReminderPersonalizationService:
         if reviewed and sum(event.id > reviewed for event in context_events) < self.MIN_CONTEXT_SAMPLES:
             return self._snapshot(mode, len(events), len(context_events), bad_timing_count, False,
                                   "已处理这次建议，收到 5 条新的同情境反馈后再评估。")
-        suggested = min(180, int(math.ceil(self.base_candidate_minutes * (1.5 if ratio >= .7 else 1.25) / 5) * 5))
+        suggested = (40 if self.base_candidate_minutes < 15 else
+                     min(180, int(math.ceil(self.base_candidate_minutes * (1.5 if ratio >= .7 else 1.25) / 5) * 5)))
         if suggested <= self.base_candidate_minutes:
             return self._snapshot(mode, len(events), len(context_events), bad_timing_count, False,
                                   "提醒间隔已达上限；可以按工作安排切换专注、会议或安静模式。")
