@@ -5,6 +5,7 @@ or accepts credentials on the command line. No force pushes or visibility edits.
 """
 import argparse
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 import hashlib
 import json
@@ -92,7 +93,7 @@ def publish_history(api, remote_sha, local_sha):
             known.update(record.split(b"\t", 1)[0].decode().split()[2] for record in records if record)
             print(f"Reused commit {number}/{len(commits)} {sha[:8]}", flush=True)
             continue
-        tree = []
+        tree, missing = [], {}
         for record in records:
             if not record:
                 continue
@@ -101,13 +102,18 @@ def publish_history(api, remote_sha, local_sha):
             if kind != "blob" or mode not in {"100644", "100755"}:
                 raise RuntimeError("Unsupported tree entry")
             if blob not in known:
-                payload = git("cat-file", "blob", blob)
-                check_file(path.decode("utf-8"), payload)
-                created = api.call("POST", "/git/blobs", {"encoding": "base64", "content": base64.b64encode(payload).decode()})
-                if created["sha"] != blob:
-                    raise RuntimeError("Blob hash mismatch")
-                known.add(blob)
+                missing[blob] = path.decode("utf-8")
             tree.append({"path": path.decode("utf-8"), "mode": mode, "type": "blob", "sha": blob})
+        def upload(item):
+            blob, path = item
+            payload = git("cat-file", "blob", blob)
+            check_file(path, payload)
+            created = api.call("POST", "/git/blobs", {"encoding": "base64", "content": base64.b64encode(payload).decode()})
+            if created["sha"] != blob:
+                raise RuntimeError("Blob hash mismatch")
+            return blob
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            known.update(executor.map(upload, missing.items()))
         created_tree = api.call("POST", "/git/trees", {"tree": tree})
         expected_tree = git("rev-parse", sha + "^{tree}").decode().strip()
         if created_tree["sha"] != expected_tree:
