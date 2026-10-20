@@ -49,6 +49,7 @@ from deskcare.ui.charts import UsageChart
 from deskcare.ui.report_preview import ReportPreview
 from deskcare.ui.pagination import Pagination
 from deskcare.ui.minute_interval import MinuteIntervalEdit
+from deskcare.ui.health_journal import HealthJournalPage
 from deskcare.importers.task_times import task_time_text
 
 
@@ -803,7 +804,7 @@ class UsagePage(QWidget):
 class ReportsPage(QWidget):
     open_settings_requested = Signal()
 
-    def __init__(self, controller, repository=None, bodylog_service=None, report_service=None, local_ai_service=None, parent=None) -> None:
+    def __init__(self, controller, repository=None, bodylog_service=None, report_service=None, local_ai_service=None, parent=None, *, health_journal_service=None) -> None:
         super().__init__(parent)
         self.controller = controller
         self.repository = repository
@@ -877,7 +878,11 @@ class ReportsPage(QWidget):
         status_scroll.setWidget(status_page)
         status_scroll.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         status_page.setObjectName("settingsContent")
-        self.sections.addTab(status_scroll, "我的状态")
+        self.status_sections = QTabWidget()
+        self.status_sections.addTab(status_scroll, "每日打卡")
+        self.journal_page = HealthJournalPage(health_journal_service)
+        self.status_sections.addTab(self.journal_page, "不适记录")
+        self.sections.addTab(self.status_sections, "我的状态")
 
         report_frame = QFrame()
         report_frame.setObjectName("card")
@@ -1102,6 +1107,7 @@ class SettingsPage(QWidget):
     companion_style_changed = Signal(str)
     reminder_interval_changed = Signal(int)
     test_reminder_requested = Signal()
+    open_journal_requested = Signal()
 
     def __init__(self, config_store, controller, collector=None, bodylog_service=None, local_ai_service=None, personalization_service=None, repository=None, cloud_ai_service=None, parent=None) -> None:
         super().__init__(parent)
@@ -1231,6 +1237,11 @@ class SettingsPage(QWidget):
         self.health.setEnabled(bodylog_service is not None)
         self.health.toggled.connect(self._toggle_bodylog)
         root.addWidget(self.health)
+        self.manage_journal = QPushButton("管理不适记录（单独授权）")
+        self.manage_journal.setObjectName("secondaryButton")
+        self.manage_journal.setEnabled(self.repository is not None)
+        self.manage_journal.clicked.connect(self.open_journal_requested.emit)
+        root.addWidget(self.manage_journal, 0, Qt.AlignmentFlag.AlignLeft)
         personalization_card = QFrame()
         personalization_card.setObjectName("card")
         personalization_layout = QVBoxLayout(personalization_card)
@@ -1442,14 +1453,14 @@ class SettingsPage(QWidget):
         root.addWidget(self.clear_usage_button, 0, Qt.AlignmentFlag.AlignLeft)
         self.clear_usage_feedback = label("只删除电脑使用记录，不会改变统计开关；删除前会再次确认。", "mutedText")
         root.addWidget(self.clear_usage_feedback)
-        self.clear_wellness_button = QPushButton("清除所有状态打卡记录")
+        self.clear_wellness_button = QPushButton("清除每日打卡记录")
         self.clear_wellness_button.setEnabled(bodylog_service is not None)
         self.clear_wellness_button.setSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
         self.clear_wellness_button.clicked.connect(self._clear_wellness)
         root.addWidget(self.clear_wellness_button, 0, Qt.AlignmentFlag.AlignLeft)
-        self.clear_wellness_feedback = label("只删除状态打卡，不会改变开关；删除前会再次确认。", "mutedText")
+        self.clear_wellness_feedback = label("只删除每日打卡，不改变开关；不适记录请在对应页面单独管理。", "mutedText")
         root.addWidget(self.clear_wellness_feedback)
         self.clear_all_button = QPushButton("清除 DeskCare 全部本地数据")
         self.clear_all_button.setEnabled(collector is not None)
@@ -1458,7 +1469,7 @@ class SettingsPage(QWidget):
         )
         self.clear_all_button.clicked.connect(self._clear_all_data)
         root.addWidget(self.clear_all_button, 0, Qt.AlignmentFlag.AlignLeft)
-        root.addWidget(label("将删除电脑使用记录、已保存任务、提醒反馈、状态打卡和授权设置；不会删除程序文件。系统备份中可能仍有副本。", "mutedText"))
+        root.addWidget(label("将删除电脑使用记录、任务、提醒反馈、每日打卡、不适记录与补记及授权设置；不会删除程序文件。系统备份中可能仍有副本。", "mutedText"))
         root.addWidget(label("本机 AI 和联网 AI 都是可选项。使用联网 AI 前，DeskCare 会先让你查看并确认要发送的内容。", "mutedText"))
         root.addStretch()
         controller.subscribe(self._sync)
@@ -1705,7 +1716,7 @@ class SettingsPage(QWidget):
         answer = QMessageBox.question(
             self,
             "确认清除状态打卡",
-            "这会删除本地所有状态打卡记录，但不会关闭开关。是否继续？",
+            "这会删除本地每日打卡记录，但不关闭开关，也不删除独立的不适记录。是否继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -1719,7 +1730,7 @@ class SettingsPage(QWidget):
         answer = QMessageBox.question(
             self,
             "确认清除 DeskCare 全部数据",
-            "这会删除电脑使用记录、已保存任务、提醒反馈、状态打卡和所有授权设置。系统备份中可能仍有副本；此操作不能在 DeskCare 内撤销。是否继续？",
+            "这会删除电脑使用记录、已保存任务、提醒反馈、状态打卡、不适记录及补记和所有授权设置。系统备份中可能仍有副本；此操作不能在 DeskCare 内撤销。是否继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

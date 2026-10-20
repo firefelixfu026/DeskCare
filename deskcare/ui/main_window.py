@@ -21,6 +21,7 @@ from deskcare.ui.tray import build_tray_icon
 from deskcare.ui.theme import STYLE, apply_theme
 from deskcare.ui.icons import navigation_icon
 from deskcare.ui.reminder_popup import ReminderPopup
+from deskcare.services.health_journal_service import HealthJournalService
 
 
 class MainWindow(QMainWindow):
@@ -50,6 +51,7 @@ class MainWindow(QMainWindow):
         self.local_ai_service = local_ai_service
         self.cloud_ai_service = cloud_ai_service
         self.personalization_service = personalization_service
+        self.health_journal_service = HealthJournalService(repository, task_service) if repository is not None else None
         self._allow_close = False
         self._shutting_down = False
         self.reminder_popup = ReminderPopup()
@@ -86,7 +88,7 @@ class MainWindow(QMainWindow):
         entries = (
             ("今日任务", "安排今天与休息", "tasks"),
             ("使用统计", "电脑使用情况", "usage"),
-            ("状态打卡", "记下今天的感受", "status"),
+            ("状态与记录", "每日打卡与自愿不适记录", "status"),
             ("日报与周报", "查看记录与回顾", "report"),
             ("设置与隐私", "管理功能与数据", "settings"),
         )
@@ -100,7 +102,7 @@ class MainWindow(QMainWindow):
         self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation, 1)
-        version = QLabel("DeskCare · UI9")
+        version = QLabel("DeskCare · UI10")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
@@ -155,9 +157,11 @@ class MainWindow(QMainWindow):
             self.bodylog_service,
             self.report_service,
             self.local_ai_service,
+            health_journal_service=self.health_journal_service,
         )
         self.reports_page.sections.tabBar().hide()
         self.reports_page.open_settings_requested.connect(self._open_wellness_settings)
+        self.reports_page.journal_page.task_created.connect(self._show_journal_task)
         self.pages.addWidget(self.reports_page)
         self.settings_page = SettingsPage(
             self.config_store,
@@ -182,6 +186,7 @@ class MainWindow(QMainWindow):
             self.reminder_popup.response_requested.connect(self.reminder_coordinator.respond)
             self.reminder_coordinator.subscribe(self._sync_desktop_reminder)
         self.settings_page.test_reminder_requested.connect(self._preview_reminder)
+        self.settings_page.open_journal_requested.connect(self._open_health_journal)
         content_layout.addWidget(self.pages)
         self.navigation.setCurrentRow(0)
         shell_layout.addWidget(sidebar)
@@ -233,6 +238,14 @@ class MainWindow(QMainWindow):
         self.navigation.setCurrentRow(4)
         self.settings_page.sections.setCurrentIndex(1)
 
+    def _open_health_journal(self) -> None:
+        self.navigation.setCurrentRow(2)
+        self.reports_page.status_sections.setCurrentIndex(1)
+
+    def _show_journal_task(self, task) -> None:
+        self.navigation.setCurrentRow(0)
+        self.today_page._show_task(task)
+
     def _show_main_window(self) -> None:
         self.show()
         self.raise_()
@@ -273,6 +286,8 @@ class MainWindow(QMainWindow):
         self.config_store.config.break_candidate_minutes = 40
         self.today_page.refresh_tasks()
         self.reports_page.refresh_report()
+        if self.health_journal_service is not None:
+            self.health_journal_service.notify()
         self.companion.hide()
         self.settings_page.companion_enabled.setChecked(False)
         self.companion.set_presentation("panel", persist=False)

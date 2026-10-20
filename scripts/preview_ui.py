@@ -3,7 +3,7 @@
 import argparse
 import gc
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -27,6 +27,8 @@ from deskcare.ui.main_window import MainWindow
 from deskcare.ui.task_dialog import TaskFormDialog, ImportPreviewDialog
 from deskcare.importers.text_importer import parse_text_bytes
 from deskcare.domain.types import TaskStatus, WellnessLevel
+from deskcare.domain.types import TaskDraft
+from deskcare.ui.health_journal import JournalEntryDialog, JournalFollowupDialog, JournalReviewDialog
 
 
 def main():
@@ -171,6 +173,35 @@ def main():
         app.processEvents()
         companion.grab().save(str(args.output / "mascot-tasks.png"))
         window.companion.hide()
+        window._open_health_journal()
+        app.processEvents()
+        window.grab().save(str(args.output / "journal-off.png"))
+        journal = window.health_journal_service
+        journal.set_enabled(True)  # synthetic temp DB only; never an upgrade default
+        now = datetime.now().astimezone()
+        journal_entry = None
+        for index in range(9):
+            event = journal.save(occurred_at=now-timedelta(hours=index+1),
+                description=f"虚构示例 {index+1}：记下自己的感受", severity="mild" if index == 0 else None,
+                notes="虚构演示内容，不是真实健康信息。")
+            if index == 0:
+                journal_entry = event
+        journal.add_action(journal_entry.id, TaskDraft("虚构行动：留一点调整时间", planned_for=date.today()), confirmed=True)
+        journal.followup(journal_entry.id, recorded_at=now, change="unsure", note="虚构补记：稍后再回看。")
+        window.reports_page.journal_page._show_event(journal_entry)
+        app.processEvents()
+        window.grab().save(str(args.output / "journal.png"))
+        window.reports_page.journal_page.pager.next.click()
+        app.processEvents()
+        window.grab().save(str(args.output / "journal-page2.png"))
+        for filename, dialog in (("journal-entry", JournalEntryDialog(now, parent=window)),
+                                 ("journal-followup", JournalFollowupDialog(now, window)),
+                                 ("journal-review", JournalReviewDialog(journal, journal_entry.id, window))):
+            dialog.show()
+            app.processEvents()
+            dialog.grab().save(str(args.output / f"{filename}.png"))
+            dialog.close()
+            dialog.deleteLater()
         window._allow_close = True
         window.close()
         gc.collect()

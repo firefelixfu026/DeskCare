@@ -26,6 +26,10 @@ class TaskService:
         for listener in tuple(self._listeners):
             listener()
 
+    def notify_external_change(self) -> None:
+        """Refresh consumers after an atomic cross-module task insertion."""
+        self._notify()
+
     def list_today(self, day: date | None = None) -> Sequence[Task]:
         target = day or date.today()
         return [task for task in self.repository.all_tasks() if self.planned_day(task) == target

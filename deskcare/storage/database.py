@@ -100,6 +100,7 @@ class UsageRepository:
         # This improves local privacy but is not a claim of forensic erasure:
         # filesystem snapshots and external backups can still retain copies.
         connection.execute("PRAGMA secure_delete = ON")
+        connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
     def _migrate(self) -> None:
@@ -242,6 +243,42 @@ class UsageRepository:
                     INSERT INTO schema_migrations VALUES (8, datetime('now'));
                     COMMIT;"""
                 )
+            if 9 not in applied:
+                backup = self.path.with_name(self.path.name + ".before-ui10")
+                if applied and not backup.exists():
+                    with sqlite3.connect(backup) as target:
+                        connection.backup(target)
+                connection.executescript(
+                    """BEGIN;
+                    CREATE TABLE health_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        occurred_at TEXT NOT NULL,
+                        body_area TEXT NOT NULL DEFAULT '',
+                        description TEXT NOT NULL,
+                        severity TEXT CHECK(severity IN ('mild','moderate','strong')),
+                        duration_minutes INTEGER CHECK(duration_minutes BETWEEN 0 AND 10080),
+                        notes TEXT NOT NULL DEFAULT '',
+                        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                    );
+                    CREATE INDEX idx_health_events_time ON health_events(occurred_at);
+                    CREATE TABLE health_followups (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_id INTEGER NOT NULL REFERENCES health_events(id) ON DELETE CASCADE,
+                        recorded_at TEXT NOT NULL,
+                        change TEXT NOT NULL CHECK(change IN ('better','same','worse','unsure')),
+                        note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
+                    );
+                    CREATE TABLE health_action_links (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_id INTEGER NOT NULL REFERENCES health_events(id) ON DELETE CASCADE,
+                        task_id INTEGER UNIQUE REFERENCES tasks(id) ON DELETE SET NULL,
+                        created_at TEXT NOT NULL
+                    );
+                    CREATE INDEX idx_health_followups_event ON health_followups(event_id,recorded_at);
+                    CREATE INDEX idx_health_actions_event ON health_action_links(event_id);
+                    INSERT INTO schema_migrations VALUES (9, datetime('now'));
+                    COMMIT;"""
+                )
 
     @staticmethod
     def _now() -> str:
@@ -367,6 +404,7 @@ class UsageRepository:
 
         with self._connect() as connection:
             for table in (
+                "health_action_links", "health_followups", "health_events",
                 "usage_daily",
                 "app_usage_daily",
                 "usage_hourly",
@@ -385,16 +423,18 @@ class UsageRepository:
             # or low-disk condition must not turn successful user deletion
             # into an application crash; future writes still use secure_delete.
             pass
-        backup = self.path.with_name(self.path.name + ".before-ui8")
-        if backup.is_file():
-            with sqlite3.connect(backup) as connection:
-                present = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                for table in ("usage_daily", "app_usage_daily", "usage_hourly", "tasks", "reminder_events",
-                              "wellness_entries", "consents", "app_settings"):
-                    if table in present:
-                        connection.execute(f"DELETE FROM {table}")
-            with sqlite3.connect(backup) as connection:
-                connection.execute("VACUUM")
+        for suffix in (".before-ui8", ".before-ui10"):
+            backup = self.path.with_name(self.path.name + suffix)
+            if backup.is_file():
+                with sqlite3.connect(backup) as connection:
+                    connection.execute("PRAGMA secure_delete = ON")
+                    present = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                    for table in ("health_action_links", "health_followups", "health_events", "usage_daily", "app_usage_daily", "usage_hourly", "tasks", "reminder_events",
+                                  "wellness_entries", "consents", "app_settings"):
+                        if table in present:
+                            connection.execute(f"DELETE FROM {table}")
+                with sqlite3.connect(backup) as connection:
+                    connection.execute("VACUUM")
 
     def add_usage(
         self,
@@ -590,26 +630,13 @@ class UsageRepository:
             if key in normalized:
                 raise ValueError("duplicate task titles must be resolved before confirmation")
             normalized.add(key)
-            title, due_at, estimate, confirmed_at, created_at, safe_source = self._task_values(
-                draft.title, draft.due_at, draft.estimated_minutes, source
-            )
-            details = self._task_details(draft.planned_for, draft.starts_at, draft.ends_at,
-                                         draft.notes, draft.time_hint, draft.estimate_is_suggestion)
-            values.append((title, due_at, estimate, confirmed_at, safe_source, created_at, details))
+            values.append(draft)
         if not values:
             return []
         with self._connect() as connection:
             inserted_ids: list[int] = []
-            for title, due_at, estimate, confirmed_at, safe_source, created_at, details in values:
-                cursor = connection.execute(
-                    """INSERT INTO tasks(
-                           title, due_at, estimated_minutes, status,
-                           confirmed_at, source, created_at, updated_at,
-                           planned_for, starts_at, ends_at, notes, time_hint, estimate_is_suggestion
-                       ) VALUES (?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (title, due_at, estimate, confirmed_at, safe_source, created_at, confirmed_at, *details),
-                )
-                inserted_ids.append(int(cursor.lastrowid))
+            for draft in values:
+                inserted_ids.append(self._insert_confirmed_task(connection, draft, source))
             placeholders = ",".join("?" for _ in inserted_ids)
             rows = connection.execute(
                 f"""SELECT *
@@ -618,6 +645,19 @@ class UsageRepository:
                 tuple(inserted_ids),
             ).fetchall()
         return [self._task_from_row(row) for row in rows]
+
+    def _insert_confirmed_task(self, connection, draft: TaskDraft, source="manual") -> int:
+        """Shared insert for callers that must atomically link a confirmed task."""
+        title, due, estimate, confirmed, created, safe_source = self._task_values(
+            draft.title, draft.due_at, draft.estimated_minutes, source)
+        details = self._task_details(draft.planned_for, draft.starts_at, draft.ends_at,
+                                    draft.notes, draft.time_hint, draft.estimate_is_suggestion)
+        cursor = connection.execute("""INSERT INTO tasks(
+            title, due_at, estimated_minutes, status, confirmed_at, source, created_at, updated_at,
+            planned_for, starts_at, ends_at, notes, time_hint, estimate_is_suggestion)
+            VALUES (?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (title, due, estimate, confirmed, safe_source, created, confirmed, *details))
+        return int(cursor.lastrowid)
 
     def add_task(
         self,
