@@ -1,6 +1,6 @@
 # DeskCare — Codex 开发交接包
 
-**项目名称**：DeskCare｜**更新**：2026-10-20｜**状态**：M0–M18、UI3 双模式伙伴、UI4 任务列表及 UI5 状态菜单优化已实现。当前启动 `dist/DeskCare-UI5/DeskCare-UI5.exe`，旧版本保留。UI4 阶段报告及商业计划书快照在 `output/pdf/`，可编辑源稿在 `docs/DeskCare_项目阶段报告_2026-10-20.md`、`docs/DeskCare_商业计划书_2026-10-20.md`。最新自动化与尚待 Windows 人工体验的边界见 `PROGRESS.md`。
+**项目名称**：DeskCare｜**更新**：2026-10-20｜**状态**：当前参赛候选版为 UI6，新增日报排版、自然文案及伙伴右键双向切换。启动 `dist/DeskCare-UI6/DeskCare-UI6.exe`，旧版本保留。五页参赛说明在 `output/pdf/DeskCare_参赛项目说明_UI6.pdf`，使用与验收资料在 `submission/`。UI4 阶段报告及商业计划书作为历史快照保留在 `output/pdf/`，对应源稿在 `docs/`。当前全量自动化 154 项通过，真实模型推理尚未验证；最新实机证据和人工验收边界见 `PROGRESS.md`。
 
 > 产品一句话：一款面向 Windows 学生与知识工作者的**本地优先、用户可控**数字健康桌面助手，将应用使用统计、今日任务、柔性休息建议、自主状态打卡和可追溯日报/周报串联成一个闭环。
 

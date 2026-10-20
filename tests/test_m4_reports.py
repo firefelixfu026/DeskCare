@@ -48,7 +48,7 @@ def test_daily_facts_are_reproducible_and_traceable(tmp_path):
     assert facts["tasks"] == {"confirmed_total": 2, "completed_by_user": 1, "open": 1}
     assert facts["reminders"]["break_intent_confirmed"] == 1
     assert facts["wellness"]["entries"][0]["comfort_level"] == "comfortable"
-    assert "未进行医学判断" in markdown
+    assert "不作医学判断" in markdown
     assert "你标记完成 1 项" in markdown
     assert "身体状态总结" not in markdown
 
@@ -68,7 +68,7 @@ def test_report_is_honest_when_wellness_is_not_authorized_and_week_is_short(tmp_
     assert facts["data_quality"]["trend_eligible"] is False
     assert facts["wellness"] is None
     assert "未开启状态打卡" in markdown
-    assert "本报告不包含个人状态记录" in markdown
+    assert "不包含个人状态记录" in markdown
     assert "身体状态总结" not in markdown
     assert "不做趋势判断" in markdown
     assert "健康改善" not in markdown
@@ -100,7 +100,7 @@ def test_authorized_app_details_appear_in_report_with_friendly_name(tmp_path):
 
     assert facts["applications"]["total_apps"] == 1
     assert facts["applications"]["top_apps"] == [{"name": "微信", "minutes": 15.0}]
-    assert "微信：约 15.0 分钟" in markdown
+    assert "| 微信 | 约 15 分钟 |" in markdown
     assert "wechat" not in markdown
 
 

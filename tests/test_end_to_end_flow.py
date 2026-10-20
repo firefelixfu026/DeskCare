@@ -90,8 +90,8 @@ def test_confirmed_task_activity_reminder_feedback_bodylog_report_closed_loop(tm
     assert facts["reminders"]["shown"] == 1
     assert facts["reminders"]["break_intent_confirmed"] == 1
     assert facts["wellness"]["recorded_days"] == 1
-    assert "活跃电脑操作估计约 40.0 分钟" in markdown
-    assert "由你标记完成 1 项" in markdown
+    assert "电脑活跃时间约 **40 分钟**" in markdown
+    assert "你标记完成 1 项" in markdown
     assert "不是医学测量" in markdown
     assert "今天的状态" in markdown
 

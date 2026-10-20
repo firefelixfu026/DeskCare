@@ -182,6 +182,18 @@ class TemplateNarrator:
                 return label
         return "未识别的自报选项"
 
+    @staticmethod
+    def _minutes(value) -> str:
+        return f"{float(value):.1f}".rstrip("0").rstrip(".")
+
+    @staticmethod
+    def _table_text(value) -> str:
+        # Program names are data, not Markdown syntax or external resources.
+        text = str(value).replace("\n", " ").replace("\r", " ")
+        for character in ("\\", "|", "*", "_", "[", "]", "`", "<", ">"):
+            text = text.replace(character, "\\" + character)
+        return text
+
     def narrate(self, facts: Mapping[str, object]) -> str:
         period = facts["period"]
         quality = facts["data_quality"]
@@ -197,8 +209,9 @@ class TemplateNarrator:
         lines = [
             f"# {'【演示数据】' if quality.get('demo_data') else ''}DeskCare {'日报' if period['type'] == 'daily' else '周报'}",
             "",
-            f"时间范围：{period['start']} 至 {period['end']}（本地日期）",
-            "生成方式：本地规则/模板；未调用在线模型，也未进行医学判断。",
+            period["start"] if period["type"] == "daily" else f"{period['start']} 至 {period['end']}",
+            "",
+            "本机整理 · 未使用 AI",
             "",
         ]
         if quality.get("demo_data"):
@@ -206,83 +219,88 @@ class TemplateNarrator:
                 "> 本报告中的任务、电脑活动、提醒和状态记录均为软件生成的虚构演示数据，不是本机真实记录，也不能用于判断健康状况或产品效果。",
                 "",
             ])
-        lines.append("## 事实摘要")
+        lines.append("## 今天一览" if period["type"] == "daily" else "## 这一周")
         if quality["activity_monitoring_enabled"] and quality["covered_minutes_estimate"] > 0:
             lines.extend(
                 [
-                    f"- 电脑活动观测覆盖约 {quality['covered_minutes_estimate']} 分钟（估计值，包含活跃、空闲和未知观测区间）。",
-                    f"- 其中活跃电脑操作估计约 {usage['active_minutes_estimate']} 分钟；这不等同于真实工作时长或学习质量。",
-                    f"- 有活动聚合的日期：{quality['days_with_activity']}/{quality['period_days']} 天。",
+                    f"记录到的电脑活跃时间约 **{self._minutes(usage['active_minutes_estimate'])} 分钟**。",
+                    "",
                 ]
             )
         elif not quality["activity_monitoring_enabled"]:
-            lines.append("- 本期间未开启活动监测，无法提供电脑活动统计；这不代表期间没有使用电脑。")
+            lines.append("电脑使用统计未开启，暂时没有这部分记录；不代表你没有使用电脑。")
         else:
-            lines.append("- 活动监测已开启，但本期间没有可用活动聚合；不能解释为 0 分钟使用。")
+            lines.append("电脑使用统计已开启，这段时间还没有可用记录，不能当作使用了 0 分钟。")
 
         lines.extend(
             [
-                f"- 已确认任务 {tasks['confirmed_total']} 项，其中由你标记完成 {tasks['completed_by_user']} 项，未完成/未标记完成 {tasks['open']} 项。",
-                f"- 提醒卡片显示 {reminders['shown']} 次；你选择“现在休息” {reminders['break_intent_confirmed']} 次、“10 分钟后” {reminders['snoozed']} 次、“跳过” {reminders['skipped']} 次、“时机不合适” {reminders['bad_timing']} 次。",
+                "",
+                (f"已确认任务 {tasks['confirmed_total']} 项，你标记完成 {tasks['completed_by_user']} 项，还有 {tasks['open']} 项未标记完成。"
+                 if tasks['confirmed_total'] else "还没有添加任务。"),
             ]
         )
-        lines.extend(["", "## 电脑使用类别与常用应用"])
+        if reminders["shown"]:
+            feedback = [f"{text} {reminders[key]} 次" for key, text in (
+                ("break_intent_confirmed", "选择现在休息"), ("snoozed", "稍后提醒"),
+                ("skipped", "跳过"), ("bad_timing", "觉得时机不合适"), ("reading", "标记正在阅读"),
+            ) if reminders.get(key)]
+            lines.extend(["", f"休息提醒显示了 {reminders['shown']} 次。" +
+                          ("你的选择：" + "，".join(feedback) + "。" if feedback else "暂时没有选择记录。")])
+        else:
+            lines.extend(["", "这段时间没有弹出休息提醒。"])
+
+        lines.extend(["", "## 今天的状态" if period['type'] == 'daily' else "## 这一周的状态"])
+        if wellness is None:
+            lines.append("未开启状态打卡，这里不包含个人状态记录。")
+        elif wellness["recorded_days"] == 0:
+            lines.append("这段时间还没有填写状态。")
+        else:
+            if period['type'] == 'daily':
+                lines.append(f"你记录的是“{self._level_label(wellness['entries'][0]['comfort_level'])}”。")
+            else:
+                lines.extend(["| 日期 | 你记录的状态 |", "| --- | --- |"])
+                lines.extend(f"| {entry['day']} | {self._level_label(entry['comfort_level'])} |"
+                             for entry in wellness['entries'])
+        lines.extend(["", "## 电脑使用", "", "### 按类别", ""])
         categories = usage["by_category_minutes"]
         assert isinstance(categories, Mapping)
         if categories:
-            lines.extend(
-                f"- {category}：约 {minutes} 分钟。"
-                for category, minutes in sorted(categories.items())
-            )
+            lines.extend(["| 类别 | 活跃时间估计 |", "| --- | --- |"])
+            lines.extend(f"| {self._table_text(category)} | 约 {self._minutes(minutes)} 分钟 |"
+                         for category, minutes in sorted(categories.items(), key=lambda item: item[1], reverse=True))
         else:
-            lines.append("- 本期间没有可展示的电脑使用类别记录。")
+            lines.append("暂无类别记录。")
+        lines.extend(["", "### 常用应用", ""])
         applications = facts.get("applications")
         if applications is None:
-            lines.append("- 未单独开启应用名称统计，因此这里不显示具体应用。")
+            lines.append("未单独开启应用名称统计，这里不显示具体应用。")
         elif not isinstance(applications, Mapping) or applications["total_apps"] == 0:
-            lines.append("- 应用名称统计已开启，但本期间没有可展示的应用记录。")
+            lines.append("应用名称统计已开启，暂时还没有记录。")
         else:
             app_list = applications["top_apps"]
             assert isinstance(app_list, list)
             if app_list:
-                lines.extend(
-                    f"- {app['name']}：约 {app['minutes']} 分钟。"
-                    for app in app_list
-                )
-            if applications["other_apps_minutes"] > 0:
-                lines.append(
-                    f"- 其他应用合计：约 {applications['other_apps_minutes']} 分钟。"
-                )
-            lines.append("- 应用使用时间不代表具体任务内容或任务完成情况。")
+                lines.extend(["| 应用 | 活跃时间估计 |", "| --- | --- |"])
+                lines.extend(f"| {self._table_text(app['name'])} | 约 {self._minutes(app['minutes'])} 分钟 |"
+                             for app in app_list[:5])
+            remaining = applications["other_apps_minutes"] + sum(app["minutes"] for app in app_list[5:])
+            if remaining > 0:
+                lines.append(f"| 其余应用合计 | 约 {self._minutes(round(remaining, 1))} 分钟 |")
+            if applications["total_apps"] > 5:
+                lines.extend(["", "这里只列用时最多的 5 个应用，完整排行可在“使用统计”查看。"])
 
-        lines.extend(["", "## 今天的状态记录"])
-        if wellness is None:
-            lines.append("- 你未开启状态打卡，因此本报告不包含个人状态记录。")
-        elif wellness["recorded_days"] == 0:
-            lines.append("- 已开启状态打卡，但本期间没有主动记录。")
-        else:
-            entries = "；".join(
-                f"{entry['day']}：{self._level_label(entry['comfort_level'])}"
-                for entry in wellness["entries"]
-            )
-            lines.append(f"- 这是你主动填写的粗粒度舒适度记录，不是医学测量：{entries}。")
-
-        lines.extend(["", "## 数据完整性与可选建议"])
+        lines.extend(["", "## 记录说明", ""])
         if period["type"] == "weekly" and not quality["trend_eligible"]:
-            lines.append("- 本周活动有效记录少于 3 天，不做趋势判断；当前仅列出已记录事实。")
+            lines.extend([f"本周有 {quality['days_with_activity']}/{quality['period_days']} 天的使用记录。有效记录少于 3 天，不做趋势判断。", ""])
         elif period["type"] == "weekly":
-            lines.append("- 本周至少有 3 天活动聚合，但趋势仍只表示记录变化，不代表健康或效率因果。")
-        if "activity" in quality["missing_sections"]:
-            lines.append("- 如果你需要活动回顾，可以在设置中单独开启活动监测；是否开启由你决定。")
-        if "wellness" in quality["missing_sections"]:
-            lines.append("- 如果你愿意，可以主动记录今天的状态；也可以选择不记录。")
-        lines.append("- 如果提醒常常不合适，可以在今日页选择会议/专注/阅读等情境或使用反馈按钮调整当下提示。")
+            lines.extend([f"本周有 {quality['days_with_activity']}/{quality['period_days']} 天的使用记录，不能据此判断健康或效率变化。", ""])
+        if quality["activity_monitoring_enabled"] and quality["covered_minutes_estimate"] > 0:
+            lines.extend([f"统计覆盖约 {self._minutes(quality['covered_minutes_estimate'])} 分钟，包含活跃、空闲和暂未识别的时段。活跃时间是估计值，不等于工作或学习时长，也不说明某项任务已经完成。", ""])
         lines.extend(
             [
+                "任务和完成状态由你确认；提醒来自本机提示记录。状态由你填写，不是医学测量，这份回顾也不作医学判断。",
                 "",
-                "## 这些信息从哪里来",
-                "- 电脑使用类别来自活动统计；具体应用仅在你单独开启后纳入。任务和完成状态由你确认，提醒次数来自你的选择，状态记录由你主动填写。",
-                "- 原始窗口标题、网页地址、键盘内容、截图和未选择文件不属于本报告输入。",
+                "电脑使用只包含已授权的统计，不读取窗口标题、网页地址或键盘内容。",
             ]
         )
         return "\n".join(lines)

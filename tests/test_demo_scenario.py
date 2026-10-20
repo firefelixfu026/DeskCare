@@ -23,7 +23,7 @@ def test_demo_scenario_is_complete_labelled_and_idempotent(tmp_path):
     assert first["facts"]["wellness"]["recorded_days"] == 1
     assert "# 【演示数据】DeskCare 日报" in first["report"]
     assert "不是本机真实记录" in first["report"]
-    assert "未调用在线模型" in first["report"]
+    assert "未使用 AI" in first["report"]
 
     second = prepare_demo_scenario(repository, now + timedelta(minutes=1))
 

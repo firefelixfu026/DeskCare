@@ -790,13 +790,7 @@ class ReportsPage(QWidget):
             return
         self._template_markdown = markdown
         self.report_text.set_report(markdown)
-        quality = facts["data_quality"]
-        self.report_sources.setText(
-            f"小结依据：电脑使用记录、你确认的任务和提醒反馈；"
-            f"电脑使用统计：{'已开启' if quality['activity_monitoring_enabled'] else '未开启'}；"
-            f"状态打卡：{'已开启' if quality['wellness_opt_in'] else '未开启'}；"
-            f"生成方式：DeskCare 本机整理"
-        )
+        self.report_sources.setText("根据本机记录更新")
 
     def notify_data_changed(self) -> None:
         # A model request describes the snapshot selected by the user. Do not

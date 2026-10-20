@@ -100,7 +100,7 @@ def test_clear_all_data_refreshes_pages_and_reminder_memory(tmp_path, monkeypatc
     app.processEvents()
 
     assert window.today_page.task_table.rowCount() == 0
-    assert "已确认任务 0 项" in window.reports_page.report_text.toPlainText()
+    assert "还没有添加任务" in window.reports_page.report_text.toPlainText()
     assert reminder._postpone_until is None
     assert reminder._last_response is None
     assert personalization.snapshot.sample_count == 0

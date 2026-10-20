@@ -141,6 +141,10 @@ class CompanionWindow(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         self.content = QWidget(self)
         self.content.setObjectName("companionContent")
+        self.content.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.content.customContextMenuRequested.connect(
+            lambda position: self._mascot_menu(self.content.mapToGlobal(position))
+        )
         root = QVBoxLayout(self.content)
         root.setContentsMargins(14, 12, 14, 14)
         title_row = QHBoxLayout()
@@ -148,7 +152,11 @@ class CompanionWindow(QWidget):
         title = QLabel("DeskCare")
         title.setObjectName("companionDragHandle")
         title.setCursor(Qt.CursorShape.SizeAllCursor)
-        title.setToolTip("拖动这里移动；靠近屏幕左右边缘松开可收成半露状态")
+        title.setToolTip("拖动这里移动；右键切换伙伴样式")
+        title.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        title.customContextMenuRequested.connect(
+            lambda position: self._mascot_menu(title.mapToGlobal(position))
+        )
         title.installEventFilter(self)
         title.setStyleSheet("font-size:15px;font-weight:700")
         title_row.addWidget(title)
@@ -463,14 +471,27 @@ class CompanionWindow(QWidget):
         if date.today() != self._state_day:
             self._sync_wellness(bool(self.bodylog_service and self.bodylog_service.enabled))
 
-    def _mascot_menu(self, position):
+    def contextMenuEvent(self, event):
+        self._mascot_menu(event.globalPos())
+        event.accept()
+
+    def _build_context_menu(self):
         menu = QMenu(self)
         menu.addAction("任务与情境", self._show_quick_panel)
         menu.addAction("打开主窗口", self.open_main_requested.emit)
         menu.addSeparator()
-        menu.addAction("切换为简洁面板", lambda: self.set_presentation("panel"))
+        target = "mascot" if self.presentation == "panel" else "panel"
+        menu.addAction("切换为吉祥物" if target == "mascot" else "切换为简洁面板",
+                       lambda: self.set_presentation(target))
         menu.addAction("隐藏", self.hide_requested.emit)
-        menu.exec(position)
+        return menu
+
+    def _mascot_menu(self, position):
+        menu = self._build_context_menu()
+        try:
+            menu.exec(position)
+        finally:
+            menu.deleteLater()
 
     def _hide_companion(self):
         self.hide_requested.emit()

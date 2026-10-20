@@ -78,7 +78,7 @@ def test_report_renders_markdown_and_refreshes_after_user_task_action(shell):
     window, _repository, _collector, tasks = shell
     report = window.reports_page.report_text
     before = report.toPlainText()
-    assert "已确认任务 0 项" in before
+    assert "还没有添加任务" in before
     assert "# DeskCare" not in before
     assert "<h1" in report.toHtml()
     tasks.add_manual("虚构 UI 体验任务")
