@@ -97,6 +97,11 @@ class TaskService:
         return task
 
     def delete(self, task_id: int) -> None:
-        self.repository.delete_task(task_id)
+        self.delete_many([task_id])
+
+    def delete_many(self, task_ids: Sequence[int]) -> None:
+        if not task_ids:
+            return
+        self.repository.delete_tasks(task_ids)
         self._notify()
 

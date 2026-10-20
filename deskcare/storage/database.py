@@ -699,8 +699,14 @@ class UsageRepository:
         return self._task_from_row(row)
 
     def delete_task(self, task_id: int) -> None:
+        self.delete_tasks([task_id])
+
+    def delete_tasks(self, task_ids) -> None:
+        ids = tuple(dict.fromkeys(task_ids))
+        if any(type(task_id) is not int or task_id <= 0 for task_id in ids):
+            raise ValueError("任务编号无效")
         with self._connect() as connection:
-            connection.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+            connection.executemany("DELETE FROM tasks WHERE id = ?", ((task_id,) for task_id in ids))
 
     # --- M3 reminder history ------------------------------------------
 

@@ -25,6 +25,13 @@ QLabel#headerState[tone="active"] { background: #DDEEE5; color: #286954; }
 QLabel#headerState[tone="warning"] { background: #FFF0D8; color: #986C2D; }
 QLabel#pageLead { color: #708287; font-size: 13px; padding-bottom: 4px; }
 QFrame#card { background: #FFFFFF; border: 1px solid #E0E8E6; border-radius: 14px; }
+QFrame#aiServiceCard { background: #FFFFFF; border: 1px solid #E0E8E6; border-radius: 14px; }
+QFrame#aiConnection { border: none; border-top: 1px solid #E8EFEB; background: transparent; }
+QLabel#aiPageTitle { color: #2A504A; font-size: 19px; font-weight: 600; }
+QFrame#aiServiceCard QCheckBox { padding: 0; color: #42685B; }
+QCheckBox#aiConsent::indicator { width: 36px; height: 22px; image: url('__ASSETS__/toggle-off.svg'); }
+QCheckBox#aiConsent::indicator:checked { image: url('__ASSETS__/toggle-on.svg'); }
+QPushButton#secondaryButton:checked { background: #EAF2EE; color: #2A6755; border-color: #92B6A5; }
 QLabel#cardTitle { color: #2A504A; font-size: 16px; font-weight: 600; }
 QLabel#cardBody, QLabel#contextLabel, QLabel#reminderBody { color: #687C7D; }
 QLabel#metricValue { color: #295F53; font-size: 17px; padding-top: 8px; }

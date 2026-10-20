@@ -3,7 +3,7 @@
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QThread, Qt, Signal, QTimer
+from PySide6.QtCore import QEvent, QItemSelectionModel, QObject, QThread, Qt, Signal, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -48,6 +48,7 @@ from deskcare.ui.task_status import TaskStatusCombo
 from deskcare.ui.charts import UsageChart
 from deskcare.ui.report_preview import ReportPreview
 from deskcare.ui.pagination import Pagination
+from deskcare.ui.minute_interval import MinuteIntervalEdit
 from deskcare.importers.task_times import task_time_text
 
 
@@ -204,6 +205,8 @@ class TodayPage(QWidget):
         self.task_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         self.task_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.task_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.task_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
+        self.task_table.setToolTip("Ctrl 点选多项，Shift 连选；全选本页不会选中其他页。")
         self.task_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.task_table.horizontalHeader().setStretchLastSection(False)
         self.task_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -220,6 +223,10 @@ class TodayPage(QWidget):
         self.empty_state = label("今天还没有任务。可以手动添加，也可以从文字清单导入。", "mutedText")
         task_layout.addWidget(self.empty_state)
         actions = QHBoxLayout()
+        self.select_page_button = QPushButton("全选本页")
+        self.select_page_button.setObjectName("secondaryButton")
+        self.select_page_button.clicked.connect(self._select_task_page)
+        actions.addWidget(self.select_page_button)
         self.edit_button = QPushButton("编辑选中")
         self.edit_button.setObjectName("secondaryButton")
         self.edit_button.clicked.connect(self._edit_selected)
@@ -233,6 +240,7 @@ class TodayPage(QWidget):
         self.task_pager.changed.connect(lambda _index: self.refresh_tasks())
         actions.addWidget(self.task_pager)
         task_layout.addLayout(actions)
+        self.task_table.itemSelectionChanged.connect(self._sync_task_selection)
         root.addWidget(task_frame, 1)
         controller.subscribe(self._sync)
         if self.task_service is not None:
@@ -245,6 +253,24 @@ class TodayPage(QWidget):
     def _selected_task(self) -> Task | None:
         row = self.task_table.currentRow()
         return self._tasks[row] if 0 <= row < len(self._tasks) else None
+
+    def _selected_tasks(self):
+        return [self._tasks[index.row()] for index in self.task_table.selectionModel().selectedRows()
+                if 0 <= index.row() < len(self._tasks)]
+
+    def _sync_task_selection(self):
+        count = len(self._selected_tasks())
+        self.edit_button.setEnabled(count == 1)
+        self.delete_button.setEnabled(count > 0)
+        self.delete_button.setText(f"删除选中（{count}）" if count else "删除选中")
+        self.select_page_button.setEnabled(bool(self._tasks))
+        self.select_page_button.setText("取消全选" if count and count == len(self._tasks) else "全选本页")
+
+    def _select_task_page(self):
+        if len(self._selected_tasks()) == len(self._tasks):
+            self.task_table.clearSelection()
+        else:
+            self.task_table.selectAll()
 
     def _add_manual(self) -> None:
         if self.task_service is None:
@@ -273,18 +299,21 @@ class TodayPage(QWidget):
                 QMessageBox.warning(self, "无法编辑任务", str(exc))
 
     def _delete_selected(self) -> None:
-        task = self._selected_task()
-        if task is None or self.task_service is None:
+        tasks = self._selected_tasks()
+        if not tasks or self.task_service is None:
             return
+        titles = "\n".join("• " + task.title[:60] for task in tasks[:5])
+        if len(tasks) > 5:
+            titles += f"\n…另有 {len(tasks) - 5} 项"
         answer = QMessageBox.question(
             self,
             "确认删除任务",
-            f"是否删除“{task.title}”？此操作只删除本地已确认任务。",
+            f"删除选中的 {len(tasks)} 项任务？\n\n{titles}\n\n只删除这些本地任务；此操作无法撤销。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer == QMessageBox.StandardButton.Yes:
-            self.task_service.delete(task.id)
+            self.task_service.delete_many([task.id for task in tasks])
 
     def _import_file(self) -> None:
         if self.task_service is None:
@@ -338,6 +367,8 @@ class TodayPage(QWidget):
             QMessageBox.warning(self, "无法确认导入", str(exc))
 
     def refresh_tasks(self) -> None:
+        selected_ids = {item.data(Qt.ItemDataRole.UserRole) for index in self.task_table.selectionModel().selectedRows()
+                        if (item := self.task_table.item(index.row(), 1)) is not None}
         selected_item = self.task_table.item(self.task_table.currentRow(), 1)
         selected_id = selected_item.data(Qt.ItemDataRole.UserRole) if selected_item else None
         if self.task_service is None:
@@ -388,6 +419,13 @@ class TodayPage(QWidget):
                 self.task_table.setCurrentCell(row, 1)
         if self._tasks and self.task_table.currentRow() < 0:
             self.task_table.setCurrentCell(0, 1)
+        if selected_ids:
+            self.task_table.clearSelection()
+            for row, task in enumerate(self._tasks):
+                if task.id in selected_ids:
+                    self.task_table.selectionModel().select(self.task_table.model().index(row, 1),
+                        QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+        self._sync_task_selection()
 
     def _show_task(self, task):
         scope = 1 if TaskService.planned_day(task) > date.today() else 0
@@ -398,7 +436,8 @@ class TodayPage(QWidget):
         index = next((i for i, row in enumerate(rows) if row.id == task.id), 0)
         self.task_pager.index = index // self._page_size
         self.refresh_tasks()
-        self.task_table.setCurrentCell(index % self._page_size, 1)
+        self.task_table.setCurrentCell(index % self._page_size, 1,
+            QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows)
 
     def _change_task_scope(self, _index):
         if hasattr(self, "task_pager"):
@@ -428,16 +467,21 @@ class TodayPage(QWidget):
         index = self.task_table.indexAt(position)
         if not index.isValid():
             return
-        self.task_table.setCurrentCell(index.row(), 1)
+        if index.row() not in {item.row() for item in self.task_table.selectionModel().selectedRows()}:
+            self.task_table.setCurrentCell(index.row(), 1,
+                QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows)
+        else:
+            self.task_table.setCurrentCell(index.row(), 1, QItemSelectionModel.SelectionFlag.NoUpdate)
         task = self._selected_task()
         menu = QMenu(self)
-        menu.addAction("编辑任务与时间", self._edit_selected)
-        menu.addAction("查看 / 编辑备注", self._edit_notes)
-        menu.addAction("安排到其他日期…", self._reschedule_selected)
-        menu.addAction("安排到今天", lambda: self.task_service.update(task.id, title=task.title,
-            due_at=task.due_at, estimated_minutes=task.estimated_minutes, planned_for=date.today()))
+        if len(self._selected_tasks()) == 1:
+            menu.addAction("编辑任务与时间", self._edit_selected)
+            menu.addAction("查看 / 编辑备注", self._edit_notes)
+            menu.addAction("安排到其他日期…", self._reschedule_selected)
+            menu.addAction("安排到今天", lambda: self.task_service.update(task.id, title=task.title,
+                due_at=task.due_at, estimated_minutes=task.estimated_minutes, planned_for=date.today()))
         menu.addSeparator()
-        menu.addAction("删除任务", self._delete_selected)
+        menu.addAction(f"删除选中（{len(self._selected_tasks())}）", self._delete_selected)
         menu.exec(self.task_table.viewport().mapToGlobal(position))
         menu.deleteLater()
 
@@ -632,6 +676,7 @@ class UsagePage(QWidget):
         start, end = self.period_range()
         self.period_label.setText(start.strftime("%Y/%m/%d") + (" — " + end.strftime("%m/%d") if start != end else ""))
         self.period_previous.setText("‹ 前一周" if self.period_choice.currentIndex() else "‹ 前一天")
+        self.period_today.setText("回到本周" if self.period_choice.currentIndex() else "回到今天")
         self.period_next.setText("后一周 ›" if self.period_choice.currentIndex() else "后一天 ›")
         self.period_next.setEnabled(end < date.today())
         if self.collector is None:
@@ -1158,18 +1203,12 @@ class SettingsPage(QWidget):
         timing_layout.addWidget(label("休息提醒", "cardTitle"))
         interval_row = QHBoxLayout()
         interval_row.addWidget(QLabel("大约多久提醒一次"))
-        self.reminder_interval = QSpinBox()
-        self.reminder_interval.setRange(1, 180)
-        self.reminder_interval.setSingleStep(1)
-        self.reminder_interval.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
-        self.reminder_interval.setToolTip("可直接输入任意整数分钟，例如 13 或 27；回车或移开焦点后保存。")
-        self.reminder_interval.setSuffix(" 分钟")
-        self.reminder_interval.setFixedWidth(140)
-        self.reminder_interval.setValue(ReminderCoordinator.saved_interval(self.repository) if self.repository else 40)
-        self.reminder_interval.setKeyboardTracking(False)
+        self.reminder_interval = MinuteIntervalEdit(ReminderCoordinator.saved_interval(self.repository) if self.repository else 40)
+        self.reminder_interval.setFixedWidth(100)
         self.reminder_interval.setEnabled(self.repository is not None)
         self.reminder_interval.valueChanged.connect(self._change_reminder_interval)
         interval_row.addWidget(self.reminder_interval)
+        interval_row.addWidget(QLabel("分钟"))
         interval_row.addStretch()
         self.test_reminder = QPushButton("试一下提醒")
         self.test_reminder.clicked.connect(lambda _checked=False: self.test_reminder_requested.emit())
@@ -1231,50 +1270,67 @@ class SettingsPage(QWidget):
         root.setContentsMargins(4, 8, 4, 12)
         root.setSpacing(14)
         self.sections.addTab(ai, "AI 服务")
-        root.addWidget(card("按需启用 AI", "不设置 AI 也能管理任务、查看统计和生成本地小结。"))
-        self.local_ai = QCheckBox("允许本机 AI 帮我整理任务清单和小结（默认关闭）")
+        root.addWidget(label("AI 服务", "aiPageTitle"))
+        root.addWidget(label("选择需要的服务。不开启也能使用任务、统计和本地小结。", "mutedText"))
+        self.local_ai_card = QFrame()
+        self.local_ai_card.setObjectName("aiServiceCard")
+        local_card_layout = QVBoxLayout(self.local_ai_card)
+        local_card_layout.setContentsMargins(22, 18, 22, 18)
+        local_card_layout.setSpacing(12)
+        local_header = QHBoxLayout()
+        local_header.addWidget(label("本机 AI", "cardTitle"))
+        local_header.addStretch()
+        self.local_ai = QCheckBox("启用本机 AI")
+        self.local_ai.setObjectName("aiConsent")
         self.local_ai.setChecked(local_ai_service.enabled if local_ai_service is not None else False)
         self.local_ai.setEnabled(local_ai_service is not None)
         self.local_ai.setToolTip("只使用这台电脑上的 AI 服务，不会把内容上传到云端。整理任务或小结仍需你主动点击。")
         self.local_ai.toggled.connect(self._toggle_local_ai)
-        root.addWidget(self.local_ai)
-        self.local_ai_advanced_button = QPushButton("填写本机 AI 连接信息（高级设置）")
+        local_header.addWidget(self.local_ai)
+        local_card_layout.addLayout(local_header)
+        local_card_layout.addWidget(label("整理任务、改写小结，只连接这台电脑上的模型。", "cardBody"))
+        self.local_ai_advanced_button = QPushButton("连接设置")
+        self.local_ai_advanced_button.setObjectName("secondaryButton")
         self.local_ai_advanced_button.setCheckable(True)
         self.local_ai_advanced_button.setSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
-        root.addWidget(self.local_ai_advanced_button, 0, Qt.AlignmentFlag.AlignLeft)
+        local_card_layout.addWidget(self.local_ai_advanced_button, 0, Qt.AlignmentFlag.AlignLeft)
         local_ai_config = QFrame()
         self.local_ai_config = local_ai_config
-        local_ai_config.setObjectName("card")
+        local_ai_config.setObjectName("aiConnection")
         local_ai_layout = QVBoxLayout(local_ai_config)
-        local_ai_layout.setContentsMargins(14, 10, 14, 10)
-        local_ai_layout.addWidget(label("本机 AI 连接设置（高级选项）", "cardTitle"))
-        endpoint_row = QHBoxLayout()
-        endpoint_row.addWidget(label("服务地址", "mutedText"))
+        local_ai_layout.setContentsMargins(0, 12, 0, 0)
+        local_ai_layout.setSpacing(10)
         self.local_ai_endpoint = QLineEdit(
             local_ai_service.endpoint if local_ai_service is not None else "http://127.0.0.1:11434/api/chat"
         )
         self.local_ai_endpoint.setPlaceholderText("http://127.0.0.1:11434/api/chat")
-        endpoint_row.addWidget(self.local_ai_endpoint, 1)
-        local_ai_layout.addLayout(endpoint_row)
-        model_row = QHBoxLayout()
-        model_row.addWidget(label("模型名", "mutedText"))
         self.local_ai_model = QLineEdit(
             local_ai_service.model if local_ai_service is not None else "llama3.2:3b"
         )
         self.local_ai_model.setPlaceholderText("例如 llama3.2:3b 或你本机已有的模型名")
-        model_row.addWidget(self.local_ai_model, 1)
+        local_fields = QGridLayout()
+        local_fields.setHorizontalSpacing(14)
+        local_fields.addWidget(label("服务地址", "mutedText"), 0, 0)
+        local_fields.addWidget(self.local_ai_endpoint, 0, 1)
+        local_fields.addWidget(label("模型名称", "mutedText"), 1, 0)
+        local_fields.addWidget(self.local_ai_model, 1, 1)
+        local_fields.setColumnStretch(1, 1)
+        local_ai_layout.addLayout(local_fields)
+        model_row = QHBoxLayout()
         self.save_local_ai_config = QPushButton("保存配置")
         self.save_local_ai_config.clicked.connect(self._save_local_ai_config)
         model_row.addWidget(self.save_local_ai_config)
         self.probe_local_ai = QPushButton("检查本机 AI 是否可用")
+        self.probe_local_ai.setObjectName("secondaryButton")
         self.probe_local_ai.setEnabled(
             local_ai_service is not None and local_ai_service.enabled
         )
         self.probe_local_ai.setToolTip("只检查本机 AI 是否可用，不会发送任务或小结。")
         self.probe_local_ai.clicked.connect(self._probe_local_ai)
         model_row.addWidget(self.probe_local_ai)
+        model_row.addStretch()
         local_ai_layout.addLayout(model_row)
         self.local_ai_config_feedback = label(
             "设置只保存在这台电脑；保存时不会连接 AI 服务。", "mutedText"
@@ -1282,23 +1338,31 @@ class SettingsPage(QWidget):
         local_ai_layout.addWidget(self.local_ai_config_feedback)
         local_ai_config.setVisible(False)
         self.local_ai_advanced_button.toggled.connect(local_ai_config.setVisible)
-        root.addWidget(local_ai_config)
+        local_card_layout.addWidget(local_ai_config)
+        root.addWidget(self.local_ai_card)
 
         cloud_card = QFrame()
-        cloud_card.setObjectName("card")
+        self.cloud_ai_card = cloud_card
+        cloud_card.setObjectName("aiServiceCard")
         cloud_layout = QVBoxLayout(cloud_card)
-        cloud_layout.setContentsMargins(14, 10, 14, 10)
-        cloud_layout.addWidget(label("联网 AI（可选，默认关闭）", "cardTitle"))
+        cloud_layout.setContentsMargins(22, 18, 22, 18)
+        cloud_layout.setSpacing(12)
+        cloud_header = QHBoxLayout()
+        cloud_header.addWidget(label("联网 AI", "cardTitle"))
+        cloud_header.addStretch()
+        self.cloud_ai = QCheckBox("允许发送所选任务清单")
+        self.cloud_ai.setObjectName("aiConsent")
+        cloud_header.addWidget(self.cloud_ai)
+        cloud_layout.addLayout(cloud_header)
         cloud_layout.addWidget(label(
-            "只处理你主动选择的任务清单。每次发送前都会展示内容并等你确认；任务文字会发送给你设置的服务商，可能产生费用并受其隐私政策约束。"
-            "不会发送电脑使用统计或状态打卡。关闭授权会删除已保存的服务密钥。", "mutedText"
+            "只整理你选中的任务，每次发送前仍需确认。不发送使用统计或状态打卡。", "cardBody"
         ))
-        self.cloud_ai = QCheckBox("允许把我选中的任务清单发送给联网 AI 整理")
+        cloud_layout.addWidget(label("服务商可能收费并按其政策处理任务文字；关闭授权会删除已存密钥。", "mutedText"))
         self.cloud_ai.setChecked(cloud_ai_service.enabled if cloud_ai_service is not None else False)
         self.cloud_ai.setEnabled(cloud_ai_service is not None)
         self.cloud_ai.toggled.connect(self._toggle_cloud_ai)
-        cloud_layout.addWidget(self.cloud_ai)
-        self.cloud_advanced_button = QPushButton("填写联网 AI 服务信息（高级设置）")
+        self.cloud_advanced_button = QPushButton("连接设置")
+        self.cloud_advanced_button.setObjectName("secondaryButton")
         self.cloud_advanced_button.setCheckable(True)
         self.cloud_advanced_button.setSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
@@ -1309,18 +1373,26 @@ class SettingsPage(QWidget):
         cloud_advanced = QWidget()
         self.cloud_advanced_frame = cloud_advanced
         cloud_advanced_layout = QVBoxLayout(cloud_advanced)
-        cloud_advanced_layout.setContentsMargins(0, 0, 0, 0)
+        cloud_advanced_layout.setContentsMargins(0, 12, 0, 0)
+        cloud_advanced_layout.setSpacing(10)
         self.cloud_endpoint = QLineEdit(cloud_ai_service.endpoint if cloud_ai_service else "https://api.openai.com/v1/chat/completions")
         self.cloud_endpoint.setPlaceholderText("https://…/v1/chat/completions")
         self.cloud_endpoint.setToolTip("服务商提供的 HTTPS 地址。请确认服务商可信并了解其数据政策。")
-        cloud_advanced_layout.addWidget(self.cloud_endpoint)
-        cloud_model_row = QHBoxLayout()
         self.cloud_model = QLineEdit(cloud_ai_service.model if cloud_ai_service else "")
         self.cloud_model.setPlaceholderText("服务商提供的模型名称（高级设置）")
-        cloud_model_row.addWidget(self.cloud_model, 1)
-        self.save_cloud_config = QPushButton("保存联网 AI 设置")
+        cloud_fields = QGridLayout()
+        cloud_fields.setHorizontalSpacing(14)
+        cloud_fields.addWidget(label("服务地址", "mutedText"), 0, 0)
+        cloud_fields.addWidget(self.cloud_endpoint, 0, 1)
+        cloud_fields.addWidget(label("模型名称", "mutedText"), 1, 0)
+        cloud_fields.addWidget(self.cloud_model, 1, 1)
+        cloud_fields.setColumnStretch(1, 1)
+        cloud_advanced_layout.addLayout(cloud_fields)
+        cloud_model_row = QHBoxLayout()
+        self.save_cloud_config = QPushButton("保存配置")
         self.save_cloud_config.clicked.connect(self._save_cloud_config)
         cloud_model_row.addWidget(self.save_cloud_config)
+        cloud_model_row.addStretch()
         cloud_advanced_layout.addLayout(cloud_model_row)
         key_row = QHBoxLayout()
         self.cloud_key_status = label(
@@ -1329,11 +1401,13 @@ class SettingsPage(QWidget):
         )
         key_row.addWidget(self.cloud_key_status, 1)
         self.save_cloud_key = QPushButton("输入服务密钥")
+        self.save_cloud_key.setObjectName("secondaryButton")
         self.save_cloud_key.setToolTip("服务商也可能称它为 API Key；DeskCare 会将其保存在 Windows 凭据管理器中。")
         self.save_cloud_key.setEnabled(cloud_ai_service is not None)
         self.save_cloud_key.clicked.connect(self._save_cloud_key)
         key_row.addWidget(self.save_cloud_key)
         self.delete_cloud_key = QPushButton("删除服务密钥")
+        self.delete_cloud_key.setObjectName("secondaryButton")
         self.delete_cloud_key.setEnabled(cloud_ai_service is not None and cloud_ai_service.has_key)
         self.delete_cloud_key.clicked.connect(self._delete_cloud_key)
         key_row.addWidget(self.delete_cloud_key)

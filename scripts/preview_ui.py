@@ -74,7 +74,7 @@ def main():
         window.show()
         for name, nav, section in (("today", 0, None), ("usage", 1, 0), ("apps", 1, 1),
                                    ("status", 2, None), ("report", 3, None),
-                                   ("settings", 4, 0), ("settings-reminders", 4, 1), ("settings-privacy", 4, 3)):
+                                   ("settings", 4, 0), ("settings-reminders", 4, 1), ("settings-ai", 4, 2), ("settings-privacy", 4, 3)):
             window.navigation.setCurrentRow(nav)
             if nav == 1:
                 window.usage_page.sections.setCurrentIndex(section)
@@ -86,6 +86,17 @@ def main():
             app.processEvents()
             if not window.grab().save(str(args.output / f"{name}.png")):
                 raise RuntimeError("Could not write preview")
+        window.navigation.setCurrentRow(4)
+        window.settings_page.sections.setCurrentIndex(2)
+        window.settings_page.cloud_advanced_button.click()
+        app.processEvents()
+        window.grab().save(str(args.output / "settings-ai-expanded.png"))
+        window.settings_page.cloud_advanced_button.click()
+        window.navigation.setCurrentRow(0)
+        window.today_page.task_table.selectAll()
+        app.processEvents()
+        window.grab().save(str(args.output / "tasks-selected.png"))
+        window.today_page.task_table.clearSelection()
         window._preview_reminder()
         app.processEvents()
         window.reminder_popup.grab().save(str(args.output / "reminder-preview.png"))
@@ -163,7 +174,7 @@ def main():
         window._allow_close = True
         window.close()
         gc.collect()
-    print(f"Rendered twenty-five fictional-data previews to {args.output}")
+    print(f"Rendered fictional-data previews to {args.output}")
 
 
 if __name__ == "__main__":
