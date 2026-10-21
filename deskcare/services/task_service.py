@@ -83,8 +83,9 @@ class TaskService:
         return min(candidates) if candidates else None
 
     def confirm_import(self, drafts: Sequence[TaskDraft], source_name: str) -> list[Task]:
-        tasks = self.repository.confirm_tasks(tuple(drafts), source_name)
-        self._notify()
+        tasks = self.repository.import_tasks(tuple(drafts), source_name)
+        if tasks:
+            self._notify()
         return tasks
 
     def add_manual(

@@ -659,6 +659,29 @@ class UsageRepository:
             (title, due, estimate, confirmed, safe_source, created, confirmed, *details))
         return int(cursor.lastrowid)
 
+    def import_tasks(self, drafts, source: str) -> list[Task]:
+        """Recheck exact duplicates under the same write lock as insertion.
+
+        Separate from manual creation: importing twice is idempotent, whereas
+        users can deliberately create repeated manual tasks. Never update old
+        notes, schedule, or completed status during an import.
+        """
+        from deskcare.domain.task_duplicates import review_import
+        drafts = tuple(drafts)
+        inserted = []
+        today = date.today()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = [self._task_from_row(row) for row in connection.execute("SELECT * FROM tasks").fetchall()]
+            reviews = review_import(drafts, existing, today=today)
+            for draft, review in zip(drafts, reviews):
+                if review.kind == "duplicate":
+                    continue
+                task_id = self._insert_confirmed_task(connection, draft, source)
+                task = self._task_from_row(connection.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
+                inserted.append(task)
+        return inserted
+
     def add_task(
         self,
         title: str,

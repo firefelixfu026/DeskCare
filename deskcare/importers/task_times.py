@@ -160,7 +160,7 @@ def merge_source_times(candidates: list[TaskDraft], source_text: str, filename: 
             remaining = [(i, item) for i, item in remaining if i != index]
             flags = tuple(flag for flag in model.uncertainty if flag != "model_due_needs_confirmation"
                           or not (original.due_at or original.starts_at))
-            merged.append(replace(original, title=split_task_time(model.title, original.planned_for, date.today()).title,
+            merged.append(replace(original, title=original.title,
                 estimated_minutes=original.estimated_minutes or model.estimated_minutes,
                 estimate_is_suggestion=original.estimated_minutes is None and model.estimated_minutes is not None,
                 uncertainty=tuple(dict.fromkeys(original.uncertainty + flags))))

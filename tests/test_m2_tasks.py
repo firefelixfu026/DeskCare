@@ -66,15 +66,12 @@ def test_cancel_or_unconfirmed_drafts_do_not_change_database(tmp_path):
     assert service.list_today() == []
 
 
-def test_duplicate_confirmation_is_atomic(tmp_path):
+def test_duplicate_import_keeps_one_task(tmp_path):
     repository = UsageRepository(tmp_path / "deskcare.sqlite3")
     service = TaskService(repository)
-    with pytest.raises(ValueError):
-        service.confirm_import(
-            [TaskDraft("同名", None), TaskDraft(" 同名 ", None)],
-            "dup.txt",
-        )
-    assert repository.tasks_for_day() == []
+    tasks = service.confirm_import([TaskDraft("同名", None), TaskDraft(" 同名 ", None)], "dup.txt")
+    assert len(tasks) == 1
+    assert len(repository.tasks_for_day()) == 1
 
 
 def test_m1_database_is_upgraded_without_losing_usage_or_consent(tmp_path):

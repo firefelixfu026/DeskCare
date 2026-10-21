@@ -35,7 +35,7 @@ def _dispose_test_windows(_keep_qapplication_alive):
     app.processEvents()
 
 
-def test_import_preview_blocks_duplicate_until_user_edits():
+def test_import_preview_skips_duplicate_until_user_edits():
     # Keep this test usable without pytest-qt; the dialog has no event loop
     # dependency beyond QApplication.processEvents().
     from PySide6.QtWidgets import QApplication
@@ -47,7 +47,9 @@ def test_import_preview_blocks_duplicate_until_user_edits():
     result = parse_text_bytes(b"- same\n- Same\n", "duplicate.md")
     dialog = ImportPreviewDialog(result)
     assert dialog.table.rowCount() == 2
-    assert not dialog.confirm.isEnabled()
+    assert dialog.confirm.isEnabled()
+    from PySide6.QtCore import Qt
+    assert dialog.table.item(1, 5).checkState() == Qt.CheckState.Unchecked
 
     dialog.table.item(1, 0).setText("A different task")
     app.processEvents()

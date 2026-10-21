@@ -376,21 +376,19 @@ class TodayPage(QWidget):
             cloud_parser = self.cloud_ai_service.parse
         dialog = ImportPreviewDialog(result, self, ai_parser=ai_parser,
                                      cloud_request_factory=cloud_request_factory,
-                                     cloud_parser=cloud_parser)
+                                     cloud_parser=cloud_parser,
+                                     existing_tasks=self.task_service.list_all)
         if selected_suffix == ".xlsx":
             explanation = "表格内容已作为本地草稿读取；AI 整理暂不支持 Excel，请直接编辑草稿或另存为 CSV。"
             dialog.ai_button.setToolTip(explanation)
             dialog.cloud_button.setToolTip(explanation)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
-        existing = {task.title for task in self.task_service.list_all() if task.source == Path(path).name}
-        if any(draft.title in existing for draft in dialog.drafts):
-            answer = QMessageBox.question(self, "这份清单可能导入过", "已有同名清单的任务。继续会新增，不会覆盖或修正旧任务。是否仍要导入？",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-            if answer != QMessageBox.StandardButton.Yes:
-                return
         try:
-            self.task_service.confirm_import(dialog.drafts, Path(path).name)
+            imported = self.task_service.confirm_import(dialog.drafts, Path(path).name)
+            skipped = len(dialog.drafts) - len(imported)
+            if skipped:
+                QMessageBox.information(self, "导入完成", f"已导入 {len(imported)} 项；保存前再次检查，跳过 {skipped} 项重复任务。原有任务未修改。")
         except ValueError as exc:
             QMessageBox.warning(self, "无法确认导入", str(exc))
 

@@ -27,7 +27,8 @@ from PySide6.QtWidgets import (
 )
 
 from deskcare.domain.types import Task, TaskDraft
-from deskcare.importers.base import ImportResult, duplicate_issues, validate_title
+from deskcare.importers.base import ImportResult, validate_title
+from deskcare.domain.task_duplicates import import_identity, review_import
 from deskcare.ui.theme import STYLE
 from deskcare.importers.task_times import split_task_time, task_time_text, clock_at
 
@@ -206,25 +207,28 @@ class ImportPreviewDialog(QDialog):
 
     def __init__(self, result: ImportResult, parent=None, ai_parser: Callable[[], ImportResult] | None = None,
                  cloud_request_factory: Callable[[], object] | None = None,
-                 cloud_parser: Callable[[object], ImportResult] | None = None) -> None:
+                 cloud_parser: Callable[[object], ImportResult] | None = None,
+                 existing_tasks: Callable[[], object] | None = None) -> None:
         super().__init__(parent)
         self.setStyleSheet(STYLE)
         self.import_result = result
         self._ai_parser = ai_parser
         self._cloud_request_factory = cloud_request_factory
         self._cloud_parser = cloud_parser
+        self._existing_tasks = existing_tasks or (lambda: ())
         self._ai_generation = 0
         self._ai_thread: QThread | None = None
         self._ai_worker: _TaskAIWorker | None = None
         self.setWindowTitle(f"预览导入：{result.source_name}")
         self.setMinimumSize(820, 520)
         self.resize(1100, 650)
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["任务", "日期", "时间（截止/时段）", "预计分钟", "我的备注"])
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(["任务", "日期", "时间（截止/时段）", "预计分钟", "我的备注", "导入检查"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         for col, width in ((1, 125), (2, 185), (3, 100)):
             self.table.setColumnWidth(col, width)
+        self.table.setColumnWidth(5, 215)
         self.table.verticalHeader().setDefaultSectionSize(45)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         for draft in result.drafts:
@@ -262,7 +266,9 @@ class ImportPreviewDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(self.confirm)
         root = QVBoxLayout(self)
-        root.addWidget(QLabel("下面是待确认的任务草稿。你可以修改或删除；点击“确认导入”后才会保存。"))
+        intro = QLabel("勾选要导入的任务。已存在和本批重复项默认跳过；可能重复的可核对后勾选。原有任务不会被覆盖。")
+        intro.setWordWrap(True)
+        root.addWidget(intro)
         root.addWidget(self.issue_label)
         root.addWidget(self.table)
         root.addLayout(buttons)
@@ -337,6 +343,7 @@ class ImportPreviewDialog(QDialog):
         self.table.setEnabled(False)
         self.ai_button.setEnabled(False)
         self.cloud_button.setEnabled(False)
+        self.confirm.setEnabled(False)
         self.ai_button.setText(busy_text)
         self.issue_label.setText(status)
         thread.start()
@@ -367,6 +374,7 @@ class ImportPreviewDialog(QDialog):
         self.ai_button.setText("本机 AI 帮我整理")
         self.ai_button.setEnabled(self._ai_parser is not None)
         self.cloud_button.setEnabled(self._cloud_request_factory is not None and self._cloud_parser is not None)
+        self._refresh_validation()
 
     def reject(self) -> None:
         # A timed-out local request cannot be force-killed safely. Let its
@@ -408,7 +416,7 @@ class ImportPreviewDialog(QDialog):
             self.table.removeRow(row)
         self._refresh_validation()
 
-    def _drafts_from_table(self) -> tuple[list[TaskDraft], list[str]]:
+    def _drafts_from_table(self, *, selected_only: bool = False) -> tuple[list[TaskDraft], list[str]]:
         drafts: list[TaskDraft] = []
         errors: list[str] = []
 
@@ -417,6 +425,9 @@ class ImportPreviewDialog(QDialog):
             return item.text() if item is not None else ""
 
         for row in range(self.table.rowCount()):
+            check = self.table.item(row, 5)
+            if selected_only and check is not None and check.checkState() != Qt.CheckState.Checked:
+                continue
             # Qt emits itemChanged while an importer is still filling the
             # remaining columns. Treat those transiently absent cells as empty
             # user input instead of raising inside the signal callback.
@@ -453,25 +464,68 @@ class ImportPreviewDialog(QDialog):
                 notes=cell_text(row, 4), time_hint=timing.time_hint,
                 estimate_is_suggestion=bool(isinstance(original, TaskDraft) and original.estimate_is_suggestion
                                            and minutes == original.estimated_minutes)))
-        errors.extend(issue.message for issue in duplicate_issues(drafts))
         return drafts, errors
 
     def _refresh_validation(self) -> None:
-        _, row_errors = self._drafts_from_table()
+        all_drafts, _ = self._drafts_from_table()
+        # Re-run after edits, AI replacement, and just before accepting. No
+        # existing task text is added to the model request or persisted here.
+        reviews = review_import(all_drafts, self._existing_tasks())
+        by_row = {draft.source_row - 1: (draft, review) for draft, review in zip(all_drafts, reviews)}
+        previous_blocked = self.table.blockSignals(True)
+        try:
+            for row in range(self.table.rowCount()):
+                item = self.table.item(row, 5)
+                if item is None:
+                    item = QTableWidgetItem()
+                    self.table.setItem(row, 5, item)
+                pair = by_row.get(row)
+                if pair:
+                    draft, review = pair
+                    signature = (import_identity(draft, date.today()), draft.notes, draft.estimated_minutes,
+                                 draft.estimate_is_suggestion, review.kind, review.message, review.matched_ids)
+                    if item.data(Qt.ItemDataRole.UserRole) != signature:
+                        item.setCheckState(Qt.CheckState.Checked if review.kind == "new" else Qt.CheckState.Unchecked)
+                        item.setData(Qt.ItemDataRole.UserRole, signature)
+                    item.setText(review.message if review.kind != "duplicate" else review.message + "（跳过）")
+                    flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+                    if review.kind != "duplicate":
+                        flags |= Qt.ItemFlag.ItemIsUserCheckable
+                    else:
+                        item.setCheckState(Qt.CheckState.Unchecked)
+                    item.setFlags(flags)
+                    item.setToolTip(review.message + "\n仅在本机核对；不修改原有任务。可能重复项可勾选为独立新任务。")
+                    item.setForeground(QColor("#936D32" if review.kind != "new" else "#317C6E"))
+                else:
+                    item.setText("请检查输入")
+                    item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+                    if item.data(Qt.ItemDataRole.UserRole) != "invalid":
+                        item.setCheckState(Qt.CheckState.Checked)
+                        item.setData(Qt.ItemDataRole.UserRole, "invalid")
+        finally:
+            self.table.blockSignals(previous_blocked)
+        selected, row_errors = self._drafts_from_table(selected_only=True)
         blocking_original = [
             issue.message
             for issue in self.import_result.issues
             if issue.fatal and issue.code != "duplicate_title"
         ]
         errors = blocking_original + row_errors
-        self.confirm.setEnabled(bool(self.table.rowCount()) and not errors)
+        self.confirm.setEnabled(bool(selected) and not errors and self._ai_thread is None)
         if errors:
             self.issue_label.setText("；".join(errors))
         else:
-            self.issue_label.setText("当前草稿可确认导入；确认前不会写入任务库。")
+            skipped = self.table.rowCount() - len(selected)
+            possible = sum(review.kind == "possible" for review in reviews)
+            self.issue_label.setText(f"将导入 {len(selected)} 项，跳过 {skipped} 项。"
+                                     + (f"有 {possible} 项可能重复，请核对安排或备注后决定。" if possible else "")
+                                     + "确认前不会保存，已有任务不会被修改。")
 
     def _accept(self) -> None:
-        drafts, errors = self._drafts_from_table()
+        if self._ai_thread is not None:
+            return
+        self._refresh_validation()
+        drafts, errors = self._drafts_from_table(selected_only=True)
         if errors or not drafts:
             self.issue_label.setText("；".join(errors) or "至少保留一项有效任务。")
             return

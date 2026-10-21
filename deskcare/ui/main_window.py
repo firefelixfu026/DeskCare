@@ -119,7 +119,7 @@ class MainWindow(QMainWindow):
         self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation, 1)
-        version = QLabel("DeskCare · UI14")
+        version = QLabel("DeskCare · UI15")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 

@@ -54,7 +54,9 @@ def test_local_llm_validates_structured_candidates_and_explicit_date_only():
         "selected.txt",
     )
 
-    assert [draft.title for draft in result.drafts] == ["提交演示材料", "整理明天的想法"]
+    # UI15 keeps matched source names stable so a model paraphrase cannot
+    # defeat import duplicate checking. The model's estimates remain suggestions.
+    assert [draft.title for draft in result.drafts] == ["提交演示材料", "明天整理想法"]
     assert result.drafts[0].due_at is not None
     assert result.drafts[1].due_at is None
     assert "model_due_needs_confirmation" in result.drafts[1].uncertainty

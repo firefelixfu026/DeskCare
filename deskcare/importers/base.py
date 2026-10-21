@@ -68,15 +68,17 @@ def validate_title(title: str, row: int | None = None) -> ImportIssue | None:
 
 
 def duplicate_issues(drafts: list[TaskDraft]) -> list[ImportIssue]:
-    seen: dict[str, int] = {}
+    from datetime import date
+    from deskcare.domain.task_duplicates import import_identity
+    seen: dict[tuple, int] = {}
     issues: list[ImportIssue] = []
     for draft in drafts:
-        key = (" ".join(draft.title.casefold().split()), draft.planned_for, draft.due_at, draft.starts_at)
+        key = import_identity(draft, date.today())
         if key in seen:
             issues.append(
                 ImportIssue(
                     "duplicate_title",
-                    f"第 {draft.source_row or '?'} 行与第 {seen[key]} 行标题重复，请编辑或删除其中一项。",
+                    f"第 {draft.source_row or '?'} 行与第 {seen[key]} 行安排重复，预览中会默认跳过。",
                     draft.source_row,
                 )
             )

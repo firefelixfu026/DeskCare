@@ -8,22 +8,22 @@ from scripts.package_submission import check_file
 ROOT=Path(__file__).resolve().parents[1]
 
 
-def main():
-    output=ROOT/"release/UI14"
+def main(version="UI14", document="UI14_任务优化说明.md", image_folder="ui14"):
+    output=ROOT/"release"/version
     output.mkdir(parents=True,exist_ok=True)
-    runtime=ROOT/"dist/DeskCare-UI14"
-    selected=output/"DeskCare-UI14-Windows-x64.zip"
+    runtime=ROOT/"dist"/f"DeskCare-{version}"
+    selected=output/f"DeskCare-{version}-Windows-x64.zip"
     with ZipFile(selected,"w",ZIP_DEFLATED,compresslevel=6) as archive:
         for path in sorted(runtime.rglob("*")):
             if path.is_file():
-                name="DeskCare-UI14/"+path.relative_to(runtime).as_posix()
+                name=f"DeskCare-{version}/"+path.relative_to(runtime).as_posix()
                 data=path.read_bytes()
                 check_file(name,data)
                 archive.writestr(name,data)
-        archive.writestr("DeskCare-UI14/START-DEMO.cmd",'@echo off\r\nstart "" "%~dp0DeskCare-UI14.exe" --demo-scenario\r\n')
-        archive.writestr("DeskCare-UI14/README.md",(ROOT/"docs/UI14_任务优化说明.md").read_bytes())
-        for image in sorted((ROOT/"docs/images/ui14").glob("*.png")):
-            archive.writestr("DeskCare-UI14/images/ui14/"+image.name,image.read_bytes())
+        archive.writestr(f"DeskCare-{version}/START-DEMO.cmd",f'@echo off\r\nstart "" "%~dp0DeskCare-{version}.exe" --demo-scenario\r\n')
+        archive.writestr(f"DeskCare-{version}/README.md",(ROOT/"docs"/document).read_bytes())
+        for image in sorted((ROOT/"docs/images"/image_folder).glob("*.png")):
+            archive.writestr(f"DeskCare-{version}/images/{image_folder}/"+image.name,image.read_bytes())
     with ZipFile(selected) as archive:
         assert archive.testzip() is None
     sha=hashlib.sha256(selected.read_bytes()).hexdigest()
