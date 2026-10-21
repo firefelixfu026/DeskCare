@@ -26,7 +26,9 @@ def setup(tmp_path):
     tasks = TaskService(repo)
     personal = ReminderPersonalizationService(repo, initially_enabled=True)
     coord = ReminderCoordinator(controller, collector, tasks, repo, personalization_service=personal)
-    now = [datetime(2026, 10, 20, 10, tzinfo=timezone.utc)]
+    # Keep the fake clock on the same civil day as newly-created tasks; a
+    # fixed 2026-10-20 fixture made the whole suite fail after that date.
+    now = [datetime.combine(datetime.now().astimezone().date(), datetime.min.time(), tzinfo=timezone.utc).replace(hour=10)]
     collector._previous = ActivitySample(100, now[0], 0, "CODE", ActivityKind.ACTIVE, True, True, "secret-app")
     collector.continuous_active_seconds = 42 * 60
     service = ReminderAdviceService(repo, coord, tasks, now=lambda: now[0])

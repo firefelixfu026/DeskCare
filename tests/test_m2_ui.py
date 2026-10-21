@@ -81,7 +81,8 @@ def test_today_status_combo_is_a_user_action_that_persists(tmp_path):
     combo = page.task_table.cellWidget(0, 0)
     combo.setCurrentIndex(combo.findData(TaskStatus.DONE))
     app.processEvents()
-    assert service.list_today()[0].status is TaskStatus.DONE
+    assert service.list_today() == []
+    assert service.list_completed()[0].id == task.id
     page.close()
 
 

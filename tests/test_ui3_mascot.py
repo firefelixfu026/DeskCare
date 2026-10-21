@@ -124,7 +124,7 @@ def test_mascot_click_opens_existing_task_controls_and_returns_to_art(companion,
     window.add_task_button.click()
     assert tasks.list_today()[0].title == "虚构吉祥物任务"
     window.task_list.itemAt(0).widget().setChecked(True)
-    assert tasks.list_today()[0].status is TaskStatus.DONE
+    assert not tasks.list_today() and tasks.list_completed()[0].status is TaskStatus.DONE
     window.back_to_mascot.click()
     assert window.mascot.isVisible()
     assert not window.content.isVisible()

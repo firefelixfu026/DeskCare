@@ -32,9 +32,8 @@ class TaskService:
 
     def list_today(self, day: date | None = None) -> Sequence[Task]:
         target = day or date.today()
-        return [task for task in self.repository.all_tasks() if self.planned_day(task) == target
-                or (self.planned_day(task) < target and (task.status is not TaskStatus.DONE
-                    or (task.completed_at and task.completed_at.astimezone().date() == target)))]
+        return [task for task in self.repository.all_tasks()
+                if task.status is not TaskStatus.DONE and self.planned_day(task) <= target]
 
     @staticmethod
     def planned_day(task: Task) -> date:
@@ -43,7 +42,30 @@ class TaskService:
                 or (task.confirmed_at.date() if task.confirmed_at else date.today()))
 
     def list_later(self, day: date | None = None) -> Sequence[Task]:
-        return [task for task in self.repository.all_tasks() if self.planned_day(task) > (day or date.today())]
+        return [task for task in self.repository.all_tasks()
+                if task.status is not TaskStatus.DONE and self.planned_day(task) > (day or date.today())]
+
+    @staticmethod
+    def completed_day(task: Task) -> date | None:
+        return task.completed_at.astimezone().date() if task.completed_at else None
+
+    def list_completed(self, day: date | None = None) -> Sequence[Task]:
+        rows = [task for task in self.repository.all_tasks() if task.status is TaskStatus.DONE
+                and (day is None or self.completed_day(task) == day)]
+        return sorted(rows, key=lambda task: (task.completed_at.timestamp() if task.completed_at else float('-inf'), task.id), reverse=True)
+
+    @staticmethod
+    def is_long_task(task) -> bool:
+        return bool(task.starts_at and task.ends_at and task.ends_at.date() > task.starts_at.date())
+
+    @staticmethod
+    def schedule_text(task) -> str:
+        if TaskService.is_long_task(task):
+            return f"长期 · {task.starts_at:%m/%d}–{task.ends_at:%m/%d}"
+        from deskcare.importers.task_times import task_time_text
+        timing = task_time_text(task)
+        return ((TaskService.planned_day(task).strftime('%m/%d') + ' ' + timing).strip()
+                if timing or task.planned_for else '—')
 
     def list_all(self) -> Sequence[Task]:
         return self.repository.all_tasks()

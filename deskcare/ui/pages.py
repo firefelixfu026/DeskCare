@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from shiboken6 import isValid
 
 from PySide6.QtCore import QEvent, QItemSelectionModel, QObject, QThread, Qt, Signal, QTimer
 from PySide6.QtGui import QColor
@@ -207,10 +208,20 @@ class TodayPage(QWidget):
         task_layout = QVBoxLayout(task_frame)
         task_layout.setContentsMargins(18, 15, 18, 15)
         self.task_scope = QComboBox()
-        self.task_scope.addItems(["今日任务", "后续任务", "全部任务"])
+        self.task_scope.addItems(["今日任务", "后续任务", "已完成任务", "全部任务"])
         self.task_scope.setFixedWidth(170)
         self.task_scope.currentIndexChanged.connect(self._change_task_scope)
-        task_layout.addWidget(self.task_scope, 0, Qt.AlignmentFlag.AlignLeft)
+        scope_row = QHBoxLayout()
+        scope_row.addWidget(self.task_scope)
+        self.completed_date = QComboBox()
+        self.completed_date.setMinimumWidth(185)
+        self.completed_date.setAccessibleName("按完成日期查看任务")
+        self.completed_date.addItem("全部完成日期", "")
+        self.completed_date.currentIndexChanged.connect(self._change_task_scope)
+        self.completed_date.hide()
+        scope_row.addWidget(self.completed_date)
+        scope_row.addStretch()
+        task_layout.addLayout(scope_row)
         self.task_table = QTableWidget(0, 4)
         self.task_table.setObjectName("todayTasks")
         self.task_table.setHorizontalHeaderLabels(["状态", "任务", "日期与时间", "预计用时"])
@@ -391,9 +402,36 @@ class TodayPage(QWidget):
         if self.task_service is None:
             self._tasks = []
         else:
-            method = (self.task_service.list_today, self.task_service.list_later, self.task_service.list_all)[self.task_scope.currentIndex()]
+            completed = list(self.task_service.list_completed())
+            previous_date = self.completed_date.currentData()
+            counts = {}
+            for task in completed:
+                day = self.task_service.completed_day(task)
+                key = day.isoformat() if day else "unknown"
+                counts[key] = counts.get(key, 0) + 1
+            self.completed_date.blockSignals(True)
+            self.completed_date.clear()
+            self.completed_date.addItem("全部完成日期", "")
+            for key in sorted((key for key in counts if key != "unknown"), reverse=True):
+                self.completed_date.addItem(f"{key}（{counts[key]} 项）", key)
+            if "unknown" in counts:
+                self.completed_date.addItem(f"完成日期未记录（{counts['unknown']} 项）", "unknown")
+            self.completed_date.setCurrentIndex(max(0, self.completed_date.findData(previous_date)))
+            self.completed_date.blockSignals(False)
+            scope = self.task_scope.currentIndex()
+            self.completed_date.setVisible(scope == 2)
+            method = (self.task_service.list_today, self.task_service.list_later,
+                      self.task_service.list_completed, self.task_service.list_all)[scope]
             self._tasks = list(method())
+            if scope == 2 and self.completed_date.currentData():
+                key = self.completed_date.currentData()
+                self._tasks = [task for task in self._tasks if
+                               (self.task_service.completed_day(task).isoformat() if task.completed_at else "unknown") == key]
             self.task_scope.setItemText(1, f"后续任务（{len(self.task_service.list_later())}）")
+            self.task_scope.setItemText(2, f"已完成任务（{len(completed)}）")
+            self.task_table.horizontalHeaderItem(2).setText("完成时间" if scope == 2 else "日期与时间")
+            self.empty_state.setText(("今天没有未完成任务。完成记录可在“已完成任务”中查看。", "暂无后续任务。",
+                                      "这个日期下还没有已完成任务。", "还没有任务。")[scope])
         self.task_pager.update_total(len(self._tasks), self._page_size)
         offset = self.task_pager.index * self._page_size
         self._tasks = self._tasks[offset:offset + self._page_size]
@@ -422,11 +460,16 @@ class TodayPage(QWidget):
                                   + ("\n时间说明：" + task.time_hint if task.time_hint else ""))
             title_item.setForeground(QColor("#7A8D86" if task.status is TaskStatus.DONE else "#294540"))
             self.task_table.setItem(row, 1, title_item)
-            planned = TaskService.planned_day(task) if self.task_service else date.today()
-            timing = task_time_text(task)
-            due_item = QTableWidgetItem((planned.strftime("%m/%d") + " " + timing).strip() if timing or task.planned_for else "—")
+            timing = TaskService.schedule_text(task)
+            if self.task_scope.currentIndex() == 2:
+                timing = task.completed_at.astimezone().strftime("%m/%d %H:%M") if task.completed_at else "完成日期未记录"
+            due_item = QTableWidgetItem(timing)
+            full_timing = TaskService.schedule_text(task)
+            if task.starts_at and task.ends_at:
+                full_timing += f"\n{task.starts_at:%Y-%m-%d %H:%M} → {task.ends_at:%Y-%m-%d %H:%M}"
             if task.due_at:
-                due_item.setToolTip(task.due_at.isoformat(timespec="minutes"))
+                full_timing += "\n截止：" + task.due_at.isoformat(timespec="minutes")
+            due_item.setToolTip(full_timing)
             self.task_table.setItem(row, 2, due_item)
             due_item.setForeground(QColor("#74858A"))
             estimate = QTableWidgetItem((f"{task.estimated_minutes} 分钟" + (" · 建议" if task.estimate_is_suggestion else "")) if task.estimated_minutes else "—")
@@ -445,10 +488,13 @@ class TodayPage(QWidget):
         self._sync_task_selection()
 
     def _show_task(self, task):
-        scope = 1 if TaskService.planned_day(task) > date.today() else 0
-        rows = list(self.task_service.list_later() if scope else self.task_service.list_today())
+        scope = 2 if task.status is TaskStatus.DONE else 1 if TaskService.planned_day(task) > date.today() else 0
+        rows = list((self.task_service.list_today, self.task_service.list_later, self.task_service.list_completed)[scope]())
         if not any(row.id == task.id for row in rows):
-            scope, rows = 2, list(self.task_service.list_all())
+            scope, rows = 3, list(self.task_service.list_all())
+        self.completed_date.blockSignals(True)
+        self.completed_date.setCurrentIndex(0)
+        self.completed_date.blockSignals(False)
         self.task_scope.setCurrentIndex(scope)
         index = next((i for i, row in enumerate(rows) if row.id == task.id), 0)
         self.task_pager.index = index // self._page_size
@@ -467,7 +513,7 @@ class TodayPage(QWidget):
         return super().eventFilter(watched, event)
 
     def _fit_task_page(self):
-        if self._fitting or not hasattr(self, "task_pager"):
+        if not isValid(self) or self._fitting or not hasattr(self, "task_pager") or not isValid(self.task_table):
             return
         size = max(1, self.task_table.viewport().height() // 56)
         if size != self._page_size:
@@ -505,6 +551,9 @@ class TodayPage(QWidget):
     def _reschedule_selected(self):
         task = self._selected_task()
         if task is None:
+            return
+        if TaskService.is_long_task(task):
+            self._edit_selected()
             return
         value, accepted = QInputDialog.getText(self, "安排任务日期", "日期（YYYY-MM-DD）",
             QLineEdit.EchoMode.Normal, (date.today() + timedelta(days=1)).isoformat())

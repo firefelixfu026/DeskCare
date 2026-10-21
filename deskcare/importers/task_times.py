@@ -13,6 +13,7 @@ CLOCK = r"\d{1,2}\s*:\s*\d{2}"
 RANGE = re.compile(r"(?:(\d{4}-\d{2}-\d{2})[ T])?" + rf"({CLOCK})\s*[-~–—至]\s*"
                    + r"(?:(\d{4}-\d{2}-\d{2})[ T])?" + rf"({CLOCK})")
 DEADLINE = re.compile(r"(?:ddl|deadline|截止(?:时间)?)\s*[:：]?\s*(?:(\d{4}-\d{2}-\d{2})[ T])?" + rf"({CLOCK})", re.I)
+DATE_RANGE = re.compile(r"(?<!\d)(\d{4}-\d{2}-\d{2})\s*(?:至|到|~|～|—|–|-)\s*(\d{4}-\d{2}-\d{2})(?!\d)")
 ESTIMATE = re.compile(r"(?<![\d.])(?:预计|耗时|用时)?\s*(-?\d{1,5}(?:\.\d+)?)\s*(分钟|minutes?|mins?|小时|hours?|hrs?|h)(?![a-z])", re.I)
 
 
@@ -37,7 +38,7 @@ def task_time_text(task) -> str:
     if task.starts_at:
         value = task.starts_at.strftime("%Y-%m-%d %H:%M" if task.planned_for and task.starts_at.date() != task.planned_for else "%H:%M")
         if task.ends_at:
-            value += "–" + task.ends_at.strftime("%Y-%m-%d %H:%M" if (task.ends_at.date() - task.starts_at.date()).days > 1 else "%H:%M")
+            value += "–" + task.ends_at.strftime("%Y-%m-%d %H:%M" if task.ends_at.date() > task.starts_at.date() else "%H:%M")
         return value
     if task.due_at:
         day = task.planned_for
@@ -55,6 +56,18 @@ def split_task_time(title: str, planned_for: date | None, reference: date) -> Ta
     hints = []
     flags = []
     day = planned_for
+    date_span = DATE_RANGE.search(cleaned)
+    if date_span:
+        try:
+            first, last = date.fromisoformat(date_span[1]), date.fromisoformat(date_span[2])
+            if last < first:
+                raise ValueError("invalid date span")
+            day = first
+            starts, ends = datetime.combine(first, time.min), datetime.combine(last, time(23, 59))
+            cleaned = cleaned[:date_span.start()] + cleaned[date_span.end():]
+        except ValueError:
+            flags.append("due_time_ambiguous")
+            hints.append(date_span[0])
     # Prefix ISO date (optionally with a clock), including ISO's T separator.
     prefix = re.match(r"^(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}:\d{2}))?\s+(.+)$", cleaned)
     if prefix:
@@ -115,7 +128,7 @@ def split_task_time(title: str, planned_for: date | None, reference: date) -> Ta
             hints.append(duration[0])
             flags.append("model_estimate_needs_confirmation")
         cleaned = cleaned[:duration.start()] + cleaned[duration.end():]
-    elif starts and ends:
+    elif starts and ends and not date_span:
         minutes = int((ends - starts).total_seconds() / 60)
         estimate = minutes if 1 <= minutes <= 1440 else None
     cleaned = re.sub(r"[（(]\s*[)）]", "", cleaned).strip(" -()（）")

@@ -79,7 +79,7 @@ def test_companion_checking_task_updates_only_local_status(tmp_path):
     companion = CompanionWindow(tasks, repository=repo)
     checkbox = companion.task_list.itemAt(0).widget()
     checkbox.setChecked(True)
-    assert tasks.list_today()[0].status is TaskStatus.DONE
+    assert not tasks.list_today() and tasks.list_completed()[0].status is TaskStatus.DONE
     checkbox.setChecked(False)
     assert tasks.list_today()[0].status is TaskStatus.TODO
     companion.close()

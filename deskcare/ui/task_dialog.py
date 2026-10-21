@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from dataclasses import replace
 import re
 
@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
+    QComboBox,
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
@@ -88,9 +89,17 @@ class TaskFormDialog(QDialog):
                or (task.due_at.date() if task.due_at else None)) if task else date.today()
         self.planned_edit = QLineEdit(day.isoformat() if day else "")
         self.planned_edit.setPlaceholderText("YYYY-MM-DD；留空为今天")
-        self.start_edit = QLineEdit(task.starts_at.strftime("%H:%M") if task and task.starts_at and task.starts_at.date() == day
+        self.task_kind = QComboBox()
+        self.task_kind.addItems(["单日任务", "长期任务（跨多天）"])
+        long_task = bool(task and task.starts_at and task.ends_at and task.ends_at.date() > task.starts_at.date())
+        self.task_kind.setCurrentIndex(1 if long_task else 0)
+        self.range_end_edit = QLineEdit(task.ends_at.date().isoformat() if long_task else (day or date.today()).isoformat())
+        self.range_end_edit.setPlaceholderText("结束日期 YYYY-MM-DD，包含这一天")
+        self.range_end_edit.setEnabled(long_task)
+        self.task_kind.currentIndexChanged.connect(lambda index: self.range_end_edit.setEnabled(index == 1))
+        self.start_edit = QLineEdit(task.starts_at.strftime("%H:%M") if task and task.starts_at and (long_task or task.starts_at.date() == day)
                                    else task.starts_at.isoformat(timespec="minutes") if task and task.starts_at else "")
-        self.end_edit = QLineEdit(task.ends_at.strftime("%H:%M") if task and task.ends_at and task.ends_at.date() == day
+        self.end_edit = QLineEdit(task.ends_at.strftime("%H:%M") if task and task.ends_at and (long_task or task.ends_at.date() == day)
                                  else task.ends_at.isoformat(timespec="minutes") if task and task.ends_at else "")
         self.start_edit.setPlaceholderText("开始，如 19:00")
         self.end_edit.setPlaceholderText("结束，如 20:00")
@@ -104,9 +113,11 @@ class TaskFormDialog(QDialog):
         self.time_hint_edit.setPlaceholderText("例如：暂定下午；不确定的时间可保留在这里")
         form = QFormLayout()
         form.addRow("标题", self.title_edit)
-        form.addRow("安排日期", self.planned_edit)
+        form.addRow("任务类型", self.task_kind)
+        form.addRow("安排／开始日期", self.planned_edit)
+        form.addRow("长期结束日期", self.range_end_edit)
         form.addRow("截止时间", self.due_edit)
-        form.addRow("活动时段（可选）", time_row)
+        form.addRow("开始／结束钟点（可选）", time_row)
         form.addRow("预计用时（分钟）", self.estimate)
         form.addRow("时间说明", self.time_hint_edit)
         form.addRow("备注", self.notes_edit)
@@ -150,6 +161,8 @@ class TaskFormDialog(QDialog):
         if re.fullmatch(r"\d{1,2}:\d{2}", value):
             try:
                 day = date.fromisoformat(self.planned_edit.text()) if self.planned_edit.text() else date.today()
+                if self.task_kind.currentIndex() == 1:
+                    day = date.fromisoformat(self.range_end_edit.text().strip())
                 return clock_at(value, day), None
             except ValueError:
                 return None, "请填写有效日期与钟点。"
@@ -157,11 +170,20 @@ class TaskFormDialog(QDialog):
 
     def details(self) -> dict:
         day = date.fromisoformat(self.planned_edit.text().strip()) if self.planned_edit.text().strip() else date.today()
+        long_task = self.task_kind.currentIndex() == 1
+        end_day = date.fromisoformat(self.range_end_edit.text().strip()) if long_task else day
+        if long_task and end_day < day:
+            raise ValueError("长期任务的结束日期不能早于开始日期。")
         def parsed(value, base_day):
             value = value.strip()
             return (datetime.fromisoformat(value) if "T" in value or " " in value else clock_at(value, base_day)) if value else None
         start = parsed(self.start_edit.text(), day)
-        end = parsed(self.end_edit.text(), start.date() if start else day)
+        end = parsed(self.end_edit.text(), end_day if long_task else start.date() if start else day)
+        if long_task:
+            start = start or datetime.combine(day, time.min)
+            end = end or datetime.combine(end_day, time(23, 59))
+            if start.date() != day or end.date() != end_day:
+                raise ValueError("开始／结束钟点应与上方日期一致，或只填写 HH:MM。")
         if start and end and start.tzinfo is not None and end.tzinfo is None:
             end = end.astimezone()
         if start and end and start.tzinfo is None and end.tzinfo is not None:
@@ -169,7 +191,10 @@ class TaskFormDialog(QDialog):
         if end and not start:
             raise ValueError("请同时填写开始时间。")
         if start and end and end < start:
-            end += timedelta(days=1)
+            if not long_task and re.fullmatch(r"\d{1,2}:\d{2}", self.end_edit.text().strip()):
+                end += timedelta(days=1)
+            else:
+                raise ValueError("结束时间不能早于开始时间。")
         return dict(planned_for=day, starts_at=start, ends_at=end,
                     notes=self.notes_edit.toPlainText(), time_hint=self.time_hint_edit.text(),
                     estimate_is_suggestion=bool(self._task and self._task.estimate_is_suggestion

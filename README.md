@@ -1,12 +1,12 @@
 # DeskCare
 
-[Windows 体验版下载](https://github.com/firefelixfu026/DeskCare/releases/tag/v2.0.0-ui13) · [演示截图与介绍](docs/产品演示_UI13.md) · [商业计划书](docs/DeskCare_商业计划书_UI13.md)
+[Windows 体验版下载](https://github.com/firefelixfu026/DeskCare/releases/tag/v2.0.0-ui14) · [任务优化说明与截图](docs/UI14_任务优化说明.md) · [历史版本归档](https://github.com/firefelixfu026/DeskCare/releases/tag/legacy-archive-2026-10-21) · [商业计划书](docs/DeskCare_商业计划书_UI13.md)
 
 DeskCare 是一个 Windows 本地优先的数字健康习惯辅助与今日任务联动工具。它不是医疗诊断器、生产力评分器或全天候行为监视器。
 
-## 当前开发阶段：UI13 检验单辅助阅读
+## 当前开发阶段：UI14 任务体验优化
 
-当前程序：`dist/DeskCare-UI13/DeskCare-UI13.exe`。先从托盘退出旧版，再启动新版并检查 UI13 标识。新增“检验单阅读”：PDF／图片本机提取、逐项核对、报告范围对照、六项血常规说明及就诊问题。本机处理与 AI 分别授权，原件不自动上传。助手支持“一个小时”等自然时长，不混淆任务耗时和截止钟点。见 [UI13 使用说明](docs/UI13_检验单辅助阅读.md)。本项目为 Windows 桌面软件，不是网页版。
+当前程序：`dist/DeskCare-UI14/DeskCare-UI14.exe`。先从托盘退出旧版。今日任务不再显示已完成项目；“已完成任务”按实际完成日期分类查看，支持重新打开。长期任务支持开始和结束日期，CTF 等跨日事项只保留一条任务，不每日复制或自动完成。见 [UI14 使用说明](docs/UI14_任务优化说明.md)。统计、提醒、助手、个人记录和 [检验单阅读](docs/UI13_检验单辅助阅读.md) 保持原有权限与功能，不扩大健康数据上传。
 
 “轻量个人 AI 健康助手”将任务与使用节奏、主动状态记录、检验单辅助阅读放在个人桌面。每个敏感功能独立授权，不自动混合或上传健康历史。检验单辅助阅读从血常规常见项起步，不作疾病或治疗判断。
 

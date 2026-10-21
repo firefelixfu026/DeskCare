@@ -726,8 +726,9 @@ class UsageRepository:
         completed_at = datetime.now().astimezone().isoformat(timespec="seconds") if status is TaskStatus.DONE else None
         with self._connect() as connection:
             connection.execute(
-                "UPDATE tasks SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
-                (status.value, completed_at, self._now(), task_id),
+                """UPDATE tasks SET completed_at = CASE WHEN ? = 'done' AND status = 'done'
+                       THEN completed_at ELSE ? END, status = ?, updated_at = ? WHERE id = ?""",
+                (status.value, completed_at, status.value, self._now(), task_id),
             )
             row = connection.execute(
                 """SELECT *

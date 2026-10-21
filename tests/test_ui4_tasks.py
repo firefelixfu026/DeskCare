@@ -60,7 +60,10 @@ def test_status_pill_persists_and_keeps_target(task_page, state, tone):
         expected = second.id
     else:
         expected = first.id
-    assert service.list_today()[0].status is state
+    assert next(task for task in service.list_all() if task.id == first.id).status is state
+    if state is TaskStatus.DONE:
+        assert first.id not in [task.id for task in service.list_today()]
+        page._show_task(service.list_completed()[0])
     assert page.task_table.cellWidget(0, 0).property("tone") == tone
     item = page.task_table.item(page.task_table.currentRow(), 1)
     assert item.data(Qt.ItemDataRole.UserRole) == expected

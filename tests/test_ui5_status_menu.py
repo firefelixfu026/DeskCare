@@ -59,7 +59,10 @@ def test_mouse_selects_actual_popup_row(status_control, index, state):
     QTest.mouseClick(combo.menu, Qt.MouseButton.LeftButton,
                      pos=combo.menu.actionGeometry(combo.menu.actions()[index]).center())
     app.processEvents()
-    assert service.list_today()[0].status is state
+    assert service.list_all()[0].status is state
+    if state is TaskStatus.DONE:
+        assert not service.list_today()
+        page._show_task(service.list_completed()[0])
     assert page.task_table.cellWidget(0, 0).currentData() == state
     assert QApplication.activePopupWidget() is None
 
@@ -103,6 +106,7 @@ def test_mouse_opens_and_wheel_does_not_change_status(status_control):
 def test_menu_checks_current_state_when_reopened(status_control):
     app, page, service, combo = status_control
     combo.setCurrentIndex(2)
+    page._show_task(service.list_completed()[0])
     combo = page.task_table.cellWidget(0, 0)
     combo.showPopup()
     assert [action.isChecked() for action in combo.menu.actions()] == [False, False, True]
@@ -120,5 +124,5 @@ def test_completion_from_qt_string_emits_reminder_signal_once(status_control):
     combo.showPopup()
     QTest.mouseClick(combo.menu, Qt.MouseButton.LeftButton,
                      pos=combo.menu.actionGeometry(combo.menu.actions()[2]).center())
-    assert service.list_today()[0].status is TaskStatus.DONE
+    assert not service.list_today() and service.list_completed()[0].status is TaskStatus.DONE
     completed.assert_called_once_with()

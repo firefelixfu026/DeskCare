@@ -37,7 +37,7 @@ class GitHub:
         if not self._token:
             raise RuntimeError("GitHub credentials unavailable. Sign in with Git Credential Manager; do not paste keys into chat.")
 
-    def call(self, method, suffix, data=None, *, binary=None, content_type=None, optional=False):
+    def call(self, method, suffix, data=None, *, binary=None, content_type=None, optional=False, timeout=120):
         url = suffix if suffix.startswith("https://uploads.github.com/") else API + ("" if suffix == "/" else suffix)
         if not (url == API or url.startswith(API + "/") or url.startswith("https://uploads.github.com/repos/firefelixfu026/DeskCare/releases/")):
             raise RuntimeError("Unexpected publication target")
@@ -54,8 +54,8 @@ class GitHub:
         attempts = 3 if method == "GET" or suffix.startswith("/git/") else 1
         for attempt in range(attempts):
             try:
-                with build_opener(NoRedirect()).open(Request(url, data=body, headers=headers, method=method), timeout=120) as response:
-                    return json.load(response)
+                with build_opener(NoRedirect()).open(Request(url, data=body, headers=headers, method=method), timeout=timeout) as response:
+                    return None if response.status == 204 else json.load(response)
             except HTTPError as exc:
                 if optional and exc.code == 404:
                     return None
@@ -144,7 +144,10 @@ def main():
     parser.add_argument("--push", action="store_true")
     parser.add_argument("--committed-only", action="store_true", help="Publish HEAD objects only while unrelated presentation artifacts are being prepared")
     parser.add_argument("--release", action="store_true")
+    parser.add_argument("--draft", action="store_true", help="Stage selected release assets before publication")
     parser.add_argument("--tag", default="v2.0.0-ui13")
+    parser.add_argument("--notes", type=Path, help="Selected release notes under this repository")
+    parser.add_argument("--release-name", help="Display name for a newly created product release")
     parser.add_argument("--asset", action="append", type=Path, default=[])
     args = parser.parse_args()
     api = GitHub()
@@ -158,14 +161,19 @@ def main():
             raise RuntimeError("Commit reviewed changes before publishing")
         publish_history(api, remote_sha, local_sha)
     if args.release:
-        if api.call("GET", "/git/ref/heads/main")["object"]["sha"] != local_sha:
+        if not args.draft and api.call("GET", "/git/ref/heads/main")["object"]["sha"] != local_sha:
             raise RuntimeError("Publish current main before release")
         release = api.call("GET", "/releases/tags/" + quote(args.tag), optional=True)
         if release is None:
-            notes = (ROOT / "docs" / "release-ui13.md").read_text(encoding="utf-8")
-            release = api.call("POST", "/releases", {"tag_name": args.tag, "target_commitish": local_sha,
-                               "name": "DeskCare UI13 Windows 体验版", "body": notes, "draft": False, "prerelease": True})
-        if release["tag_name"] != args.tag or release.get("draft"):
+            release = next((item for item in api.call("GET", "/releases?per_page=30") if item["tag_name"] == args.tag), None)
+        if release is None:
+            notes_path = args.notes.resolve() if args.notes else ROOT / "docs/release-ui13.md"
+            if not notes_path.is_relative_to(ROOT / "docs"):
+                raise RuntimeError("Release notes must be under docs")
+            notes = notes_path.read_text(encoding="utf-8")
+            release = api.call("POST", "/releases", {"tag_name": args.tag, "target_commitish": remote_sha if args.draft else local_sha,
+                               "name": args.release_name or "DeskCare UI13 Windows 体验版", "body": notes, "draft": args.draft, "prerelease": True})
+        if release["tag_name"] != args.tag:
             raise RuntimeError("Unexpected release")
         assets = {item["name"]: item for item in api.call("GET", f"/releases/{release['id']}/assets")}
         for path in args.asset:
@@ -183,7 +191,12 @@ def main():
             if uploaded.get("digest") != digest or uploaded["size"] != len(content):
                 raise RuntimeError("Release asset verification failed")
             print(json.dumps({"asset": uploaded["browser_download_url"], "sha256": digest, "size": len(content)}), flush=True)
-        print("Release: " + release["html_url"], flush=True)
+        if release.get("draft") and not args.draft:
+            tag = api.call("GET", "/git/ref/tags/" + quote(args.tag), optional=True)
+            if tag is not None and tag["object"]["sha"] != local_sha:
+                raise RuntimeError("Unexpected existing tag; not overwritten")
+            release = api.call("PATCH", f"/releases/{release['id']}", {"draft": False, "target_commitish": local_sha})
+        print(("Draft: " if release.get("draft") else "Release: ") + release["html_url"], flush=True)
 
 
 if __name__ == "__main__":

@@ -928,3 +928,16 @@
 实际执行：全量 `QT_QPA_PLATFORM=offscreen .venv/Scripts/python.exe -m pytest -o addopts= -q -rs --tb=short -p no:cacheprovider --basetemp .pytest-ui13-all` 得 361 passed、1 skipped，127.02 秒；唯一跳过为沙箱 localhost socket。新增定向 55 passed，150% 新增与助手 UI 定向 64 passed。虚构 PDF 实际提取六项，Windows 本机 OCR 在沙箱外实际识别六项，默认未核对；原页渲染及四幅核对／阅读界面已检查，修正提取时把 L/L 的 L 错当结果旗标的问题。未操作用户报告、真实密钥或付费模型。PyInstaller 已构建 UI13 onedir，旧包保留。
 
 限制：真实医院多列版式、噪声扫描、干净机、真实模型、原生焦点、多屏与医学专业审核仍待专项验收。没有临床有效性结论。用户新要求发布 GitHub、下载体验包、截图介绍和商业计划书，发布结果将在后续条目记录，不把尚未上传的链接说成已完成。
+## UI14 任务分类优化与旧版归档 2026-10-21
+
+本轮仅按用户要求优化已有任务。TaskService 的今日／后续只返回未完成项目，新增完成查询按实际 completed_at 倒序，日期未知不补猜；TodayPage 新增完成日期筛选，保留分页、多选和撤销完成。重复设置完成不改写原时间。TaskFormDialog 使用已有 planned_for／starts_at／ends_at 填写长期起止日期，明确完整日期范围可导入；跨日同一 ID，不复制、不自动完成、不从比赛持续天数推断实际用时或休息间隔。数据表不迁移，提醒、助手和健康权限不扩张。
+
+修改 app／task_times／TaskService／database／TodayPage／TaskFormDialog／MainWindow、README 和五份核心文档；新增 UI14 说明、四幅虚构界面、任务与归档测试、版本打包／只读核对、旧版归档／恢复／清理脚本。GitHub 发布工具增加可选说明与名称、大附件超时和发布草稿支持，不显示或另存凭据。用户原有商业计划书 PDF 删除／新增状态保留，未并入本轮提交。
+
+实际验证：最终全量命令 `QT_QPA_PLATFORM=offscreen .venv/Scripts/python.exe -m pytest -o addopts= -q -rs --tb=short -p no:cacheprovider --basetemp .pytest-ui14-source-final` 得 **373 passed，151.90 秒**。150% 缩放的任务／归档／旧状态菜单回归 **42 passed，18.93 秒**。占用保护补充后 `tests/test_ui14_archives.py` 得 **5 passed，5.01 秒**，含临时编译并运行的 Windows 映像锁定回归；恢复逐字节校验、缺回执不删除、改动保留均通过。修复旧测试把 fake clock 固定在 10 月 20 日、次日新建任务不属于假时钟今日的问题。四幅离屏界面已逐张检查；compileall、pip check、只读包核对通过。
+
+PyInstaller UI14 onedir 构建完成，7 个包内模块及 QtPdf 与源码核对。最终 EXE SHA256 `14daa614f49477b266760a1c41867519b649a216236b804b41b634845e71e4a3`。Windows ZIP（含演示入口、说明与截图）SHA256 `04daec01847d29803f7294c93393487248c1e737a3da7674f6d61b26e0d70a37`，54,840,007 字节。离屏、模拟数据与映像锁定测试不等同 Windows 原生焦点、多屏、干净机或真实 AI 验收；本轮未读取用户数据库、健康报告或调用付费 AI。
+
+历史归档：https://github.com/firefelixfu026/DeskCare/releases/tag/legacy-archive-2026-10-21 。67 个旧 dist/release 根、4542 个文件、原大小 5,458,959,394 字节，逐字节去重为 14 个 ZIP 分包；全部对象／CRC 与 17 个附件服务端 SHA256 已核对。公共 certifi CA 证书单独审核，不视作个人私钥；真实数据库／密钥拒绝归档。恢复使用发布页独立 RESTORE.ps1，索引记录每个原路径和内容哈希，非仅保留最新版。
+
+已清理 4502 个未被 Windows 锁定的旧文件。UI12 仍在运行，首次只读占用探测未识别映像锁，Windows 拒绝删除 40 个运行文件；发现后立即从已验证 UI14 公共依赖及原 UI12 构建缓存恢复其余 146 个文件，完整 186 文件均与原归档 SHA256 一致。修正为不写入的读写访问探测，并通过真实临时映像回归，整目录占用时先保留。当前 UI12 完整保留等待用户从托盘退出，其余旧版已清理；扣除恢复后净释放 **5,332,023,192 字节，约 5.33 GB**。本次临时归档 ZIP 副本已清理，仅保留小型索引、服务端回执和恢复说明。源码、Git、开发环境、build／测试缓存、当前 UI14 和个人数据未删除。UI12 退出后可用相同已验证索引清理最后这一份；不强制结束用户程序。
