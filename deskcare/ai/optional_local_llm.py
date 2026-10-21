@@ -91,7 +91,9 @@ class LocalLLMClient:
         prompt = (
             "你是 DeskCare 的本地任务候选解析器。只处理用户主动选择的文本。"
             "输出严格 JSON，格式为 {\"tasks\":[{\"title\":string,"
-            "\"due_at\":string|null,\"estimated_minutes\":integer|null}]}。"
+            "\"due_at\":string|null,\"estimated_minutes\":integer|null,\"location\":string|null,\"source_row\":integer|null}]}。"
+            "location 只逐字摘录本条活动明确的地点、教室、场馆或线上平台，没有就返回 null，不推测地址。"
+            "source_row 为原文行号（从1起，含标题和空行），地点单独放 location，不混入任务标题，将在备注中供用户核对。"
             "按日期标题归属每条任务，区分括号里的 ddl、24:00 和活动起止时间，不遗漏原任务。"
             "同日同一时段的同一事项只输出一次，不同日期或场次分别保留；保留原任务名称，避免重复改写。"
             "已有任务由应用在本机核对，不要声称读过未提供的任务库。"
@@ -209,8 +211,18 @@ class LocalLLMClient:
                 if isinstance(estimate, bool) or not isinstance(estimate, int) or not 1 <= estimate <= MAX_ESTIMATED_MINUTES:
                     estimate = None
                     uncertainty.append("model_estimate_needs_confirmation")
-            drafts.append(TaskDraft(title, due_at, estimate, index, tuple(uncertainty),
-                                    estimate_is_suggestion=estimate is not None))
+            from deskcare.importers.task_locations import checked_location, LOCATION_PREFIX
+            location = checked_location(item.get("location"), item.get("source_row"), source_text)
+            notes = ""
+            source_row = index
+            if location:
+                value, source_row = location
+                notes = LOCATION_PREFIX + value
+                uncertainty.append("source_location")
+            elif item.get("location") not in (None, ""):
+                uncertainty.append("model_location_needs_confirmation")
+            drafts.append(TaskDraft(title, due_at, estimate, source_row, tuple(uncertainty),
+                                    notes=notes, estimate_is_suggestion=estimate is not None))
         from deskcare.importers.task_times import merge_source_times
         drafts = merge_source_times(drafts, source_text, filename) if drafts else drafts
         issues.extend(duplicate_issues(drafts))

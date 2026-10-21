@@ -961,3 +961,15 @@ GitHub main 已核对为应用提交 `a76c267e8e24ab564d6f893a478358f4833593f4`�
 批量虚构性能检查：1500 个已有任务与 500 草稿初版全量模糊匹配 **11.366 秒**；收紧为保守名称包含线索、缓存归一化并批量检查后 **0.243 秒**，不是语义识别能力或所有机器性能承诺。普通与 150% 虚构导入图已检查；compileall、pip check 及 git diff --check 通过。PyInstaller Windows UI15 onedir 构建完成；`scripts.verify_ui15_bundle` 核对 **11 模块及 QtPdf** 与源码一致。EXE SHA256 `a7c8342ae18db2b47e3e90e0e934cb62424ae1226149640c720644a7dcf61d87`；ZIP **54,673,995 字节**，SHA256 `f761813e78891e99baf2adfca687075669796ce96e8fa76079fc0d62c9aa9556`，191 条目 CRC／路径／高置信密钥格式检查通过，含演示入口、说明及虚构截图。
 
 Windows 状态：本机构建、离屏 Qt／缩放和包内代码检查已执行；未使用用户真实库、密钥、付费模型或医院资料，没有将模拟传输称为真实 DeepSeek 验收。原生焦点／多屏／干净机与真实模型别名表现仍待人工验证。下一最小步骤为以虚构清单复核真实服务输出和人工选择体验，不扩展新模块。GitHub 发布结果以随后成功回执及下载哈希核对为准。
+
+## UI16｜AI 提取活动地点到备注（2026-10-21）
+
+按用户要求仅优化既有清单整理。联网／本机候选增加 location 与 source_row；新 `importers/task_locations.py` 验证单行、160 字上限、字面原文和行号，缺行号只接受唯一原文行。`merge_source_times` 将地点与源任务匹配后拆入 notes，保留原日期／时段／截止／明确预计值；CSV 用对应解析器合并，不将表头当任务。虚构地点、错行、无法对应的地点不擅自填入；不能保证任何场所别名、跨行或复杂表格识别，不作定位、地址检索或导航。
+
+预览按源行及原名保留个人备注，与地点合并而非覆盖，重复地点行不重复追加；超过 4000 字保持完整草稿并阻止保存，要求用户精简，不截断。备注可编辑，确认才入库。旧版把地点留在标题的事项也提示可能重复，不自动覆盖旧任务。没有新数据表／权限／第三方依赖，已有库、个人备注、健康及活动资料不追加到模型正文。
+
+本机保留完整 `dist/DeskCare-UI16`，新增根目录 `Start-DeskCare.cmd` 指向当前最新版；README 两入口及 UI16 文档明确以后同步本机启动入口，不要求本机用户反复下载。未运行用户个人实例或强制结束旧程序。变更集中在 task_locations／task_times／optional_local_llm／cloud_task_assistant／ImportPreviewDialog／task_duplicates、app／MainWindow 版本、五份核心文档；新增 UI16 测试、虚构截图／说明、包内核对及分发脚本。个人商业计划书 PDF 的既有删除／新增状态未纳入提交。
+
+实际执行：首轮 UI16、UI15、UI8、M6 AI、M9 云端定向 **83 passed，20.95 秒**。补充备注超长校验后全量 `QT_QPA_PLATFORM=offscreen .venv/Scripts/python.exe -m pytest -o addopts= -q -rs --tb=short -p no:cacheprovider --basetemp .pytest-ui16-all` 得 **416 passed，166.67 秒**；150% 的 UI16／UI15／UI8 定向 **59 passed，14.37 秒**。含虚构地址／错误或缺失行号／跨条目错配／同名不同地点／CSV／旧响应／异步个人备注保留／原时段及长期日期／确认前无写入／二次导入检查。compileall、pip check（No broken requirements found）和 git diff --check 通过；普通／150% 虚构截图逐张检查，没有真实模型调用或用户资料。
+
+Windows 11 / Python 3.12.7 / PyInstaller 6.22.3 构建成功；只读包内核对 **12 模块及 QtPdf** 与源码一致。EXE SHA256 `6010c839414a32c6d94b62795431ebaed7bf9eaa472d33c6c909959287c7e8a4`，ZIP **54,649,532 字节**、SHA256 `5bbb702da0337fcb58066bdb560915f43d395230c31a5db76146d7a895b1471a`，含隔离演示入口／说明／虚构截图。本机构建和离屏测试不等同真实 DeepSeek 识别、原生焦点／多屏或干净机已验收。下一最小步骤是使用本人选择的非敏感样例核对真实模型，不扩展新模块。GitHub 发布及服务端哈希以本轮后续成功回执为准；本机最新版不因上传而移除。

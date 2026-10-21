@@ -139,10 +139,16 @@ def split_task_time(title: str, planned_for: date | None, reference: date) -> Ta
 def merge_source_times(candidates: list[TaskDraft], source_text: str, filename: str) -> list[TaskDraft]:
     """Source schedule wins; AI estimates are editable suggestions, never facts."""
     from deskcare.importers.text_importer import parse_text_bytes
+    from deskcare.importers.task_locations import location_from_notes, title_without_location, merge_notes
 
-    rules = list(parse_text_bytes(source_text.encode("utf-8"), filename).drafts)
+    if filename.casefold().endswith(".csv"):
+        from deskcare.importers.csv_importer import parse_csv_bytes
+        rules = list(parse_csv_bytes(source_text.encode("utf-8"), filename).drafts)
+    else:
+        rules = list(parse_text_bytes(source_text.encode("utf-8"), filename).drafts)
     if not rules:
-        return candidates
+        return [replace(item, notes="", uncertainty=tuple(flag for flag in item.uncertainty if flag != "source_location"))
+                for item in candidates]
     def key(title):
         return re.sub(r"[\W_]", "", title).casefold()
     def score(left, right):
@@ -153,14 +159,31 @@ def merge_source_times(candidates: list[TaskDraft], source_text: str, filename: 
     remaining = list(enumerate(candidates))
     merged = []
     for original in rules:
-        ranked = sorted(((score(key(original.title), key(item.title)), index, item)
-                         for index, item in remaining), key=lambda entry: entry[0], reverse=True)
-        if ranked and ranked[0][0] >= .8 and (len(ranked) == 1 or ranked[0][0] - ranked[1][0] >= .08):
+        def candidate_score(item):
+            location = location_from_notes(item.notes) if ("source_location" in item.uncertainty
+                        and item.source_row == original.source_row) else ""
+            left = title_without_location(original.title, location)
+            right = title_without_location(item.title, location)
+            return score(key(left), key(right))
+        ranked = sorted(((candidate_score(item), index, item) for index, item in remaining),
+                        key=lambda entry: (entry[0], entry[2].source_row == original.source_row
+                            and "source_location" in entry[2].uncertainty), reverse=True)
+        source_bound = bool(ranked and "source_location" in ranked[0][2].uncertainty
+                            and ranked[0][2].source_row == original.source_row
+                            and not any(entry[0] >= ranked[0][0] and "source_location" in entry[2].uncertainty
+                                        and entry[2].source_row == original.source_row for entry in ranked[1:]))
+        if ranked and ranked[0][0] >= .8 and (source_bound or len(ranked) == 1 or ranked[0][0] - ranked[1][0] >= .08):
             _, index, model = ranked[0]
             remaining = [(i, item) for i, item in remaining if i != index]
-            flags = tuple(flag for flag in model.uncertainty if flag != "model_due_needs_confirmation"
-                          or not (original.due_at or original.starts_at))
-            merged.append(replace(original, title=original.title,
+            location = location_from_notes(model.notes) if source_bound else ""
+            clean_title = title_without_location(original.title, location)
+            # If stripping would erase the whole task, do not label the task
+            # name itself as a place. The original title is always retained.
+            valid_place = bool(location and clean_title and location != original.title.strip())
+            notes = merge_notes(original.notes, model.notes) if valid_place else original.notes
+            flags = tuple(flag for flag in model.uncertainty if (flag != "model_due_needs_confirmation"
+                          or not (original.due_at or original.starts_at)) and (flag != "source_location" or valid_place))
+            merged.append(replace(original, title=clean_title if valid_place else original.title, notes=notes,
                 estimated_minutes=original.estimated_minutes or model.estimated_minutes,
                 estimate_is_suggestion=original.estimated_minutes is None and model.estimated_minutes is not None,
                 uncertainty=tuple(dict.fromkeys(original.uncertainty + flags))))

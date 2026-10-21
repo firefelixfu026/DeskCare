@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from deskcare.domain.types import Task, TaskDraft
 from deskcare.importers.base import ImportResult, validate_title
 from deskcare.domain.task_duplicates import import_identity, review_import
+from deskcare.importers.task_locations import location_from_notes, title_without_location, merge_notes
 from deskcare.ui.theme import STYLE
 from deskcare.importers.task_times import split_task_time, task_time_text, clock_at
 
@@ -339,7 +340,11 @@ class ImportPreviewDialog(QDialog):
         thread.finished.connect(thread.deleteLater)
         self._ai_thread = thread
         self._ai_worker = worker
-        self._notes_before_ai = {draft.title: draft.notes for draft in self._drafts_from_table()[0] if draft.notes}
+        self._notes_before_ai = []
+        for draft in self._drafts_from_table()[0]:
+            original = self.table.item(draft.source_row - 1, 0).data(Qt.ItemDataRole.UserRole)
+            if draft.notes:
+                self._notes_before_ai.append((getattr(original, "source_row", None), getattr(original, "title", draft.title), draft.notes))
         self.table.setEnabled(False)
         self.ai_button.setEnabled(False)
         self.cloud_button.setEnabled(False)
@@ -361,7 +366,11 @@ class ImportPreviewDialog(QDialog):
         self.table.blockSignals(True)
         self.table.setRowCount(0)
         for draft in result.drafts:
-            self._append_draft(replace(draft, notes=getattr(self, "_notes_before_ai", {}).get(draft.title, draft.notes)))
+            location = location_from_notes(draft.notes) if "source_location" in draft.uncertainty else ""
+            candidates = [notes for row, title, notes in getattr(self, "_notes_before_ai", [])
+                          if row == draft.source_row and title_without_location(title, location) == draft.title]
+            notes = merge_notes(candidates[0], draft.notes) if len(candidates) == 1 else draft.notes
+            self._append_draft(replace(draft, notes=notes))
         self.table.blockSignals(False)
         self._show_issues(result.issues)
         self._refresh_validation()
@@ -393,6 +402,10 @@ class ImportPreviewDialog(QDialog):
         self.table.setItem(row, 2, QTableWidgetItem(task_time_text(draft)))
         self.table.setItem(row, 3, QTableWidgetItem(str(draft.estimated_minutes or "")))
         self.table.setItem(row, 4, QTableWidgetItem(draft.notes))
+        if "source_location" in draft.uncertainty and draft.notes:
+            self.table.item(row, 4).setToolTip(draft.notes + "\n\n地点由 AI 从该条清单原文摘录，请核对；可直接修改或删除。")
+        elif "model_location_needs_confirmation" in draft.uncertainty:
+            self.table.item(row, 4).setToolTip("AI 提议的地点无法与本条原文对应，未自动填入；可以手动补充。")
         if draft.estimate_is_suggestion:
             self.table.item(row, 3).setToolTip("AI 预计用时，仅供参考；可直接修改，确认后才保存。")
             self.table.item(row, 3).setForeground(QColor("#936D32"))
@@ -453,6 +466,8 @@ class ImportPreviewDialog(QDialog):
                 errors.append(title_issue.message)
             if due_error:
                 errors.append(due_error)
+            if len(cell_text(row, 4)) > 4000:
+                errors.append(f"第 {row + 1} 行备注超过 4000 字，请精简后再导入。")
             if not title:
                 continue
             if title_issue or due_error or (raw_minutes and minutes is None):

@@ -30,6 +30,13 @@ def import_identity(task, today: date):
 
 
 def _relation(incoming, other, left, right):
+    # Older imports may still have the place in their title. Keep those visible
+    # as possible duplicates when a new AI result moves that literal to notes.
+    from deskcare.importers.task_locations import location_from_notes, title_without_location
+    location = (location_from_notes(incoming.notes) if incoming.notes else "") or (location_from_notes(other.notes) if other.notes else "")
+    if location:
+        left = (normalized_title(title_without_location(incoming.title, location)), *left[1:])
+        right = (normalized_title(title_without_location(other.title, location)), *right[1:])
     same_title = left[0] == right[0]
     # A bounded, conservative name warning: added/removed words may refer to
     # the same task. Do not use expensive all-pairs semantic/fuzzy matching in
