@@ -16,7 +16,6 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QApplication,
     QHBoxLayout,
     QLabel,
@@ -172,7 +171,8 @@ class CompanionWindow(QWidget):
         title_row.addWidget(hide_button)
         root.addLayout(title_row)
 
-        self.mode = QComboBox()
+        from deskcare.ui.choices import SoftComboBox
+        self.mode = SoftComboBox()
         self.mode.setObjectName("companionContextSelector")
         self.mode.setMaxVisibleItems(5)
         self.mode.setMinimumHeight(40)

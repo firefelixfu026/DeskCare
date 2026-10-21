@@ -1,7 +1,7 @@
 """Small desktop reminder: no modal dialog, forced focus or private task text."""
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 
 class ReminderPopup(QWidget):
@@ -42,14 +42,21 @@ class ReminderPopup(QWidget):
         self.tip = QLabel()
         self.tip.setWordWrap(True)
         layout.addWidget(self.tip)
-        row = QHBoxLayout()
+        row = QGridLayout()
+        row.setSpacing(8)
         self.buttons = {}
-        for code, text in (("BREAK_NOW", "现在休息"), ("SNOOZE_10_MIN", "10 分钟后"), ("SKIP", "跳过")):
+        for index, (code, text) in enumerate((("BREAK_NOW", "现在休息"), ("SNOOZE_10_MIN", "10 分钟后"),
+                                             ("SKIP", "跳过"), ("BAD_TIMING", "时机不合适"))):
             button = QPushButton(text)
+            button.setAccessibleName(text)
+            button.setToolTip({"BREAK_NOW": "表示你打算休息，不推断已经休息。",
+                               "SNOOZE_10_MIN": "10 分钟后再提醒；单独统计为推迟。",
+                               "SKIP": "跳过本次，不记为时机不合适。",
+                               "BAD_TIMING": "明确反馈这次提醒的时机不合适。"}[code])
             button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             button.clicked.connect(lambda _checked=False, value=code: self._respond(value))
             self.buttons[code] = button
-            row.addWidget(button)
+            row.addWidget(button, index // 2, index % 2)
         layout.addLayout(row)
         self.preview = True
         self.setStyleSheet("""

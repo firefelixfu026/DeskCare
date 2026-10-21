@@ -7,7 +7,7 @@ import sqlite3
 from PySide6.QtCore import QEvent, Qt, Signal, QTimer
 from PySide6.QtGui import QIntValidator, QTextBlockFormat, QTextCursor
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
+    QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
     QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from deskcare.domain.health_journal import CHANGE_LABELS, SEVERITY_LABELS
 from deskcare.domain.types import TaskDraft
 from deskcare.ui.pagination import Pagination
+from deskcare.ui.choices import SoftComboBox
 from deskcare.ui.task_dialog import TaskFormDialog
 from deskcare.ui.theme import STYLE
 from deskcare.ui.report_preview import ReportPreview
@@ -41,7 +42,7 @@ class JournalEntryDialog(QDialog):
         self.description_edit = QLineEdit(event.description if event else "")
         self.description_edit.setMaxLength(500)
         self.description_edit.setPlaceholderText("用自己的话记下这次感受")
-        self.severity_edit = QComboBox()
+        self.severity_edit = SoftComboBox()
         for value, label in SEVERITY_LABELS.items():
             self.severity_edit.addItem(label, value)
         self.severity_edit.setCurrentIndex(self.severity_edit.findData(event.severity if event else None))
@@ -99,7 +100,7 @@ class JournalFollowupDialog(QDialog):
         self.setWindowTitle("补记后来的感受")
         self.setMinimumWidth(460)
         self.when_edit = QLineEdit(now.strftime("%Y-%m-%d %H:%M"))
-        self.change_edit = QComboBox()
+        self.change_edit = SoftComboBox()
         self.change_edit.addItem("请选择，也可以取消不记", None)
         for value, label in CHANGE_LABELS.items():
             self.change_edit.addItem(label, value)
@@ -232,7 +233,7 @@ class HealthJournalPage(QWidget):
         self.privacy = text_label("独立开启后才保存，不发送给 AI；关闭会删除记录及补记。")
         root.addWidget(self.privacy)
         toolbar = QHBoxLayout()
-        self.period = QComboBox()
+        self.period = SoftComboBox()
         self.period.addItems(["近 7 天", "近 30 天", "全部记录"])
         self.period.currentIndexChanged.connect(self._change_period)
         toolbar.addWidget(self.period)

@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot, Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel,
+    QCheckBox, QDialog, QFormLayout, QHBoxLayout, QLabel,
     QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout,
     QTabWidget, QWidget,
 )
 
 from deskcare.domain.types import TaskStatus
+from deskcare.ui.choices import SoftComboBox
 from deskcare.services.reminder_advice import AdviceError
 
 
@@ -57,15 +58,15 @@ class ReminderAdviceDialog(QDialog):
         input_layout.setContentsMargins(4, 8, 4, 4)
         input_layout.setSpacing(10)
         form = QFormLayout()
-        self.provider = QComboBox()
+        self.provider = SoftComboBox()
         self.provider.addItem("本机 AI", "local")
         self.provider.addItem("联网 AI（使用已配置的服务）", "cloud")
         if not advisor.local_ai or not advisor.local_ai.enabled:
             self.provider.setCurrentIndex(1)
         form.addRow("分析服务", self.provider)
-        self.task = QComboBox()
+        self.task = SoftComboBox()
         form.addRow("本次参考的任务", self.task)
-        self.comfort = QComboBox()
+        self.comfort = SoftComboBox()
         self.comfort.addItem("不提供感受", None)
         self.comfort.addItem("本次自报：无明显不适", "comfortable")
         self.comfort.addItem("本次自报：有点不适", "some_discomfort")
@@ -171,7 +172,8 @@ class ReminderAdviceDialog(QDialog):
                 f"当前间隔 {data['interval_minutes']} 分钟\n"
                 + (f"累计活跃估计 {active:g} 分钟" if active is not None else "当前活动信息不可用")
                 + (f" · 已选任务：{task['title']}" if task else " · 未选定任务")
-                + (f"\n同情境 {feedback['context_count']} 条反馈，其中 {feedback['bad_timing']} 次时机不合适。"
+                + (f"\n同情境 {feedback['context_count']} 条反馈：推迟 {feedback.get('snoozed', 0)} 次，"
+                   f"跳过 {feedback.get('skipped', 0)} 次，明确不合适 {feedback['bad_timing']} 次。"
                    if feedback["context_count"] else "")
             )
             self.result.setPlainText(self.advice.text())

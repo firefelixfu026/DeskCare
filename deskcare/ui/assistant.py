@@ -1,11 +1,12 @@
 """Small, plain-language assistant with a real allowlisted tool executor."""
 from PySide6.QtCore import QObject, QThread, Signal, Slot, Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
+    QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
     QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout,
 )
 
 from deskcare.services.assistant_service import WELCOME
+from deskcare.ui.choices import SoftComboBox
 from deskcare.services.reminder_advice import AdviceError
 
 
@@ -43,7 +44,7 @@ class AssistantDialog(QDialog):
         title = QLabel("有什么我能帮你安排的？")
         title.setObjectName("cardTitle")
         header.addWidget(title, 1)
-        self.provider = QComboBox()
+        self.provider = SoftComboBox()
         self.provider.addItem("本机 AI", "local")
         self.provider.addItem("联网 AI", "cloud")
         if not service.gateway.local_ai or not service.gateway.local_ai.enabled:

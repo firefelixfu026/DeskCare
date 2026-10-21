@@ -26,6 +26,8 @@ SYSTEM_PROMPT = (
     "有点不适时不建议继续赶工；只能提出自愿暂停或保持低打扰的选择，不做诊断。"
     "有选定任务时可建议先收尾一小步，但不得无限延后或改变任何任务日期。"
     "多次时机不合适时可建议修改间隔，减少打扰；间隔不必固定加 5 分钟。"
+    "feedback.snoozed 是推迟次数，skipped 是跳过次数，bad_timing 是明确不合适次数；三者不能混算。"
+    "推迟只是可能想先收尾的线索，不能说成用户认为时机不合适，更不能推断健康状态。"
     "feedback.review_already_handled 为 true 时，不能仅因同一批反馈再次建议延长间隔。"
     "evidence 为非空数组，只能引用提供的事实键 mode/activity/task/feedback/comfort/deadline；"
     "其中 deadline 仅限选定任务在 10 分钟内截止时，其他键也必须确有数据。"
@@ -65,7 +67,8 @@ class AdviceRequest:
         else:
             lines.append("任务：不提供")
         lines.append((f"提醒反馈：共 {feedback['total']} 条，同情境 {feedback['context_count']} 条，"
-                      f"其中 {feedback['bad_timing']} 次时机不合适；"
+                      f"推迟 {feedback.get('snoozed', 0)} 次、跳过 {feedback.get('skipped', 0)} 次、"
+                      f"明确不合适 {feedback['bad_timing']} 次；三者不混算；"
                       + ("这批建议已处理。" if feedback['review_already_handled'] else "这批建议尚未处理。"))
                      if feedback['available'] else "提醒反馈：未授权，不提供")
         lines.extend([f"本次信息时间：{self.context.captured_at:%Y-%m-%d %H:%M}",

@@ -116,6 +116,8 @@ class ReminderAdviceService:
             "interval_choices": choices,
             "feedback": {"total": len(events), "context_count": len(context_events),
                          "bad_timing": sum(item.response == "BAD_TIMING" for item in context_events),
+                         "snoozed": sum(item.response == "SNOOZE_10_MIN" for item in context_events),
+                         "skipped": sum(item.response == "SKIP" for item in context_events),
                          "available": bool(personalization and personalization.enabled and personalization.eligible),
                          "review_already_handled": bool(reviewed and sum(item.id > reviewed for item in context_events) < 5)},
             "selected_task": selected,

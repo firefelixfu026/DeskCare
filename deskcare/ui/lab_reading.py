@@ -2,12 +2,13 @@
 from PySide6.QtCore import QObject, QThread, Signal, Slot, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
+    QCheckBox, QDialog, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
     QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QSplitter,
     QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from deskcare.domain.lab_reading import LabRow, STATUS, parse_lab_text
+from deskcare.ui.choices import SoftComboBox
 from deskcare.importers.lab_source import LabSourceError, read_selected_lab_source
 from deskcare.services.reminder_advice import AdviceError
 
@@ -133,7 +134,7 @@ class LabReadingDialog(QDialog):
         self.ai_consent.toggled.connect(self._ai_changed)
         layout.addWidget(self.ai_consent)
         bar = QHBoxLayout()
-        self.provider = QComboBox()
+        self.provider = SoftComboBox()
         self.provider.addItem("本机 AI", "local")
         self.provider.addItem("联网 AI", "cloud")
         if not service.gateway.local_ai or not service.gateway.local_ai.enabled:

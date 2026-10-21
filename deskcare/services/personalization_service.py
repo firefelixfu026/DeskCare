@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 
 from deskcare.domain.break_policy import BreakPolicyConfig
@@ -33,12 +33,15 @@ class PersonalizationSnapshot:
     applied: bool
     explanation: str
     suggested_minutes: int | None = None
+    snooze_count: int = 0
+    consecutive_snoozes: int = 0
+    skipped_count: int = 0
 
 
 class ReminderPersonalizationService:
     """Suggest an interval review; never silently change the user's setting.
 
-    Only explicit ``BAD_TIMING`` responses can trigger an interval review.
+    Explicit BAD_TIMING and repeated snoozing are distinct review signals.
     It never changes intervals or hard gates, or infers a health state.
     Demo-provider feedback is ineligible by construction.
     """
@@ -48,6 +51,7 @@ class ReminderPersonalizationService:
     MIN_CONTEXT_SAMPLES = 5
     RECENT_LIMIT = 30
     BAD_TIMING_RATIO = 0.40
+    SNOOZE_STREAK_FOR_REVIEW = 3
 
     def __init__(
         self,
@@ -108,6 +112,36 @@ class ReminderPersonalizationService:
         self.refresh(self.snapshot.mode)
 
     def _calculate(self, mode: str) -> PersonalizationSnapshot:
+        events = self.repository.recent_reminder_events(limit=self.RECENT_LIMIT, responded_only=True) if self.eligible else []
+        context = [event for event in events if event.mode == mode]
+        streak = 0
+        for event in context:
+            if event.response != "SNOOZE_10_MIN":
+                break
+            streak += 1
+        result = self._calculate_from_events(mode, events)
+        if self.eligible and self._enabled and streak >= self.SNOOZE_STREAK_FOR_REVIEW and result.suggested_minutes is None:
+            try:
+                reviewed = int(self.repository.get_setting(f"reminder_reviewed_{mode}", "0"))
+            except (TypeError, ValueError):
+                reviewed = 0
+            handled = bool(reviewed and sum(event.id > reviewed for event in context) < self.MIN_CONTEXT_SAMPLES)
+            suggested = 40 if self.base_candidate_minutes < 15 else min(180, int(math.ceil(self.base_candidate_minutes * 1.25 / 5) * 5))
+            if handled:
+                result = replace(result, explanation="已处理这次建议，收到 5 条新的同情境反馈后再评估。")
+            elif suggested > self.base_candidate_minutes:
+                result = replace(result, suggested_minutes=suggested,
+                    explanation=(f"同情境最近连续 {streak} 次选择了“10 分钟后”。要不要复核提醒频率，"
+                                 f"例如从 {self.base_candidate_minutes} 改为 {suggested} 分钟？"
+                                 "这只是推迟线索，不算“时机不合适”，也不会自动修改。"))
+        snoozed = sum(event.response == "SNOOZE_10_MIN" for event in context)
+        skipped = sum(event.response == "SKIP" for event in context)
+        prefix = (f"同情境：推迟 {snoozed} 次 · 跳过 {skipped} 次 · 明确不合适 {result.bad_timing_count} 次。\n"
+                  if self.eligible and context else "")
+        return replace(result, snooze_count=snoozed, skipped_count=skipped, consecutive_snoozes=streak,
+                       explanation=prefix + result.explanation)
+
+    def _calculate_from_events(self, mode: str, events) -> PersonalizationSnapshot:
         mode_label = MODE_LABELS.get(mode, mode)
         if not self.eligible:
             return self._snapshot(
@@ -118,10 +152,6 @@ class ReminderPersonalizationService:
                 False,
                 "演示数据不会用于提醒个性化；真实模式下仍需单独授权。",
             )
-        events = self.repository.recent_reminder_events(
-            limit=self.RECENT_LIMIT,
-            responded_only=True,
-        )
         context_events = [event for event in events if event.mode == mode]
         bad_timing_count = sum(event.response == "BAD_TIMING" for event in context_events)
         if not self._enabled:

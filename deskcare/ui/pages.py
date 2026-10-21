@@ -8,7 +8,6 @@ from PySide6.QtCore import QEvent, QItemSelectionModel, QObject, QThread, Qt, Si
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -50,6 +49,7 @@ from deskcare.ui.charts import UsageChart
 from deskcare.ui.report_preview import ReportPreview
 from deskcare.ui.pagination import Pagination
 from deskcare.ui.minute_interval import MinuteIntervalEdit
+from deskcare.ui.choices import SoftComboBox, SegmentedChoice
 from deskcare.ui.health_journal import HealthJournalPage
 from deskcare.importers.task_times import task_time_text
 
@@ -146,7 +146,8 @@ class TodayPage(QWidget):
 
         context_row = QHBoxLayout()
         context_row.addWidget(label("当前情境", "contextLabel"))
-        self.context_mode = QComboBox()
+        self.context_mode = SegmentedChoice()
+        self.context_mode.setAccessibleName("当前情境")
         for value, text in (
             ("normal", "普通工作"),
             ("focus", "专注模式"),
@@ -207,13 +208,13 @@ class TodayPage(QWidget):
         task_frame.setObjectName("card")
         task_layout = QVBoxLayout(task_frame)
         task_layout.setContentsMargins(18, 15, 18, 15)
-        self.task_scope = QComboBox()
+        self.task_scope = SoftComboBox()
         self.task_scope.addItems(["今日任务", "后续任务", "已完成任务", "全部任务"])
         self.task_scope.setFixedWidth(170)
         self.task_scope.currentIndexChanged.connect(self._change_task_scope)
         scope_row = QHBoxLayout()
         scope_row.addWidget(self.task_scope)
-        self.completed_date = QComboBox()
+        self.completed_date = SoftComboBox()
         self.completed_date.setMinimumWidth(185)
         self.completed_date.setAccessibleName("按完成日期查看任务")
         self.completed_date.addItem("全部完成日期", "")
@@ -659,7 +660,8 @@ class UsagePage(QWidget):
         root = outer
         root.setSpacing(16)
         period_row = QHBoxLayout()
-        self.period_choice = QComboBox()
+        self.period_choice = SegmentedChoice()
+        self.period_choice.setAccessibleName("按日或按周查看使用统计")
         self.period_choice.addItems(["每天", "每周"])
         self.period_previous = QPushButton("‹ 前一天")
         self.period_next = QPushButton("后一天 ›")
@@ -900,7 +902,7 @@ class ReportsPage(QWidget):
         self.bodylog_status = label("状态打卡默认关闭；需要单独授权。", "cardBody")
         bodylog_layout.addWidget(self.bodylog_status)
         bodylog_actions = QHBoxLayout()
-        self.wellness_level = QComboBox()
+        self.wellness_level = SoftComboBox()
         for level in WellnessLevel:
             self.wellness_level.addItem(WELLNESS_LEVEL_LABELS[level], level)
         bodylog_actions.addWidget(self.wellness_level)
@@ -958,7 +960,8 @@ class ReportsPage(QWidget):
         report_top = QHBoxLayout()
         report_top.addWidget(label("今日 / 每周小结", "cardTitle"))
         report_top.addStretch()
-        self.report_period = QComboBox()
+        self.report_period = SegmentedChoice()
+        self.report_period.setAccessibleName("日报或周报")
         self.report_period.addItem("今日日报", "daily")
         self.report_period.addItem("本周周报", "weekly")
         self.report_period.currentIndexChanged.connect(lambda _index: self.refresh_report())
@@ -1226,7 +1229,7 @@ class SettingsPage(QWidget):
         self.companion_enabled.setToolTip("在桌面快捷查看任务和切换情境。")
         style_row = QHBoxLayout()
         style_row.addWidget(QLabel("伙伴样式"))
-        self.companion_style = QComboBox()
+        self.companion_style = SoftComboBox()
         self.companion_style.addItem("简洁面板", "panel")
         self.companion_style.addItem("吉祥物", "mascot")
         selected_style = self.repository.get_setting("companion_style", "panel") if self.repository else "panel"

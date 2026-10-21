@@ -1,8 +1,8 @@
 @echo off
 setlocal
-if not exist "%~dp0dist\DeskCare-UI16\DeskCare-UI16.exe" (
-    echo DeskCare UI16 is not built in this checkout.
+if not exist "%~dp0dist\DeskCare-UI17\DeskCare-UI17.exe" (
+    echo DeskCare UI17 is not built in this checkout.
     pause
     exit /b 1
 )
-start "" "%~dp0dist\DeskCare-UI16\DeskCare-UI16.exe"
+start "" "%~dp0dist\DeskCare-UI17\DeskCare-UI17.exe"

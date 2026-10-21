@@ -3,6 +3,7 @@
 from PySide6.QtCore import QPoint, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QComboBox, QMenu
+from deskcare.ui.choices import RoundedMenu
 
 
 class TaskStatusCombo(QComboBox):
@@ -13,24 +14,14 @@ class TaskStatusCombo(QComboBox):
     each action independently and provides Escape, arrows and Enter handling.
     """
 
-    MENU_STYLE = """
-        QMenu { background: #FFFFFF; color: #405C52;
-                border: 1px solid #DCE7E1; border-radius: 10px;
-                padding: 6px; font-size: 13px; }
-        QMenu::item { padding: 9px 16px 9px 10px; margin: 1px 0;
-                      border: none; border-radius: 6px; }
-        QMenu::item:selected { background: #EAF3ED; color: #2D6955; }
-        QMenu::indicator { width: 14px; height: 14px; }
-    """
+    MENU_STYLE = RoundedMenu.STYLE
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("taskStatus")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.menu = QMenu(self)
-        self.menu.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
-        self.menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.menu = RoundedMenu(self)
         self.menu.setStyleSheet(self.MENU_STYLE)
         self.menu.setMinimumWidth(152)
         self.menu.aboutToHide.connect(self.update)
@@ -52,7 +43,7 @@ class TaskStatusCombo(QComboBox):
         rect = self.badge_rect()
         painter.setBrush(QColor(background))
         painter.setPen(QPen(QColor("#A0BCAF"), 1) if self.hasFocus() else Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(rect, 7, 7)
+        painter.drawRoundedRect(rect, 11, 11)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(foreground))
         painter.drawEllipse(QPoint(int(rect.left() + 12), int(rect.center().y())), 2, 2)

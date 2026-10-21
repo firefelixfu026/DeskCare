@@ -11,7 +11,6 @@ from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
-    QComboBox,
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
@@ -31,6 +30,7 @@ from deskcare.importers.base import ImportResult, validate_title
 from deskcare.domain.task_duplicates import import_identity, review_import
 from deskcare.importers.task_locations import location_from_notes, title_without_location, merge_notes
 from deskcare.ui.theme import STYLE
+from deskcare.ui.choices import SoftComboBox
 from deskcare.importers.task_times import split_task_time, task_time_text, clock_at
 
 
@@ -91,7 +91,7 @@ class TaskFormDialog(QDialog):
                or (task.due_at.date() if task.due_at else None)) if task else date.today()
         self.planned_edit = QLineEdit(day.isoformat() if day else "")
         self.planned_edit.setPlaceholderText("YYYY-MM-DD；留空为今天")
-        self.task_kind = QComboBox()
+        self.task_kind = SoftComboBox()
         self.task_kind.addItems(["单日任务", "长期任务（跨多天）"])
         long_task = bool(task and task.starts_at and task.ends_at and task.ends_at.date() > task.starts_at.date())
         self.task_kind.setCurrentIndex(1 if long_task else 0)
