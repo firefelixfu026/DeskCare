@@ -872,6 +872,7 @@ class UsagePage(QWidget):
 
 class ReportsPage(QWidget):
     open_settings_requested = Signal()
+    review_requested = Signal()
 
     def __init__(self, controller, repository=None, bodylog_service=None, report_service=None, local_ai_service=None, parent=None, *, health_journal_service=None) -> None:
         super().__init__(parent)
@@ -972,10 +973,10 @@ class ReportsPage(QWidget):
         self.export_report_button = QPushButton("保存为文件")
         self.export_report_button.clicked.connect(self._export_report)
         report_top.addWidget(self.export_report_button)
-        self.ai_report_button = QPushButton("AI 帮我润色")
-        self.ai_report_button.setEnabled(local_ai_service is not None and local_ai_service.enabled)
-        self.ai_report_button.setToolTip("只在你主动点击后，使用已设置的本机 AI 帮助整理这份小结；不会发送到云端。")
-        self.ai_report_button.clicked.connect(self._rewrite_with_ai)
+        self.ai_report_button = QPushButton("回顾与下一步")
+        self.ai_report_button.setEnabled(report_service is not None and repository is not None)
+        self.ai_report_button.setToolTip("查看复盘重点与下一步入口；可单独授权 AI 参考数量汇总，每次发送前确认。")
+        self.ai_report_button.clicked.connect(self.review_requested.emit)
         report_top.addWidget(self.ai_report_button)
         report_layout.addLayout(report_top)
         self.report_sources = label("", "mutedText")
@@ -995,7 +996,7 @@ class ReportsPage(QWidget):
         self.refresh_report()
 
     def _sync_local_ai(self, enabled: bool) -> None:
-        self.ai_report_button.setEnabled(enabled)
+        self.ai_report_button.setEnabled(self.report_service is not None and self.repository is not None)
         if not enabled:
             self.refresh_report()
 
@@ -1145,9 +1146,9 @@ class ReportsPage(QWidget):
     def _on_report_ai_thread_finished(self) -> None:
         self._report_ai_thread = None
         self._report_ai_worker = None
-        self.ai_report_button.setText("AI 帮我润色")
+        self.ai_report_button.setText("回顾与下一步")
         self.ai_report_button.setEnabled(
-            self.local_ai_service is not None and self.local_ai_service.enabled
+            self.report_service is not None and self.repository is not None
         )
 
     def _export_report(self) -> None:

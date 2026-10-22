@@ -46,6 +46,8 @@ QPushButton:pressed { background: #225B4C; }
 QPushButton:disabled { background: #E4ECE8; color: #8B9B95; }
 QPushButton#secondaryButton { background: #FFFFFF; color: #567169; border: 1px solid #CEDDD6; }
 QPushButton#secondaryButton:hover { background: #EAF2EE; }
+QPushButton#companionTaskTitle { background: transparent; color: #315F53; text-align: left; padding: 7px 6px; border-radius: 7px; }
+QPushButton#companionTaskTitle:hover { background: #EAF2EE; }
 QPushButton#reminderAction { background: #D5AE69; color: #49391D; }
 QCheckBox { spacing: 9px; padding: 9px 2px; }
 QComboBox, QLineEdit, QSpinBox, QPlainTextEdit { background: #FFFFFF; color: #294540; border: 1px solid #CEDDD6; border-radius: 7px; padding: 7px 9px; selection-background-color: #D3E6DC; }

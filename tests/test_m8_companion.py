@@ -66,7 +66,7 @@ def test_companion_quick_add_and_persistence(tmp_path):
     companion.close()
 
 
-def test_companion_checking_task_updates_only_local_status(tmp_path):
+def test_companion_completing_task_requires_explicit_confirmation(tmp_path, monkeypatch):
     from deskcare.domain.types import TaskStatus
     from deskcare.services.task_service import TaskService
     from deskcare.storage.database import UsageRepository
@@ -77,10 +77,22 @@ def test_companion_checking_task_updates_only_local_status(tmp_path):
     tasks = TaskService(repo)
     tasks.add_manual("完成原型")
     companion = CompanionWindow(tasks, repository=repo)
-    checkbox = companion.task_list.itemAt(0).widget()
-    checkbox.setChecked(True)
+    from PySide6.QtWidgets import QMessageBox, QPushButton
+    row = companion.task_list.itemAt(0).widget()
+    finish = [button for button in row.findChildren(QPushButton) if button.text() == '完成…'][0]
+    monkeypatch.setattr(QMessageBox, 'exec', lambda box: None)
+    finish.click()
+    assert tasks.list_today()[0].status is TaskStatus.TODO
+
+    def confirm(box):
+        assert box.defaultButton().text() == '先不完成'
+        for button in box.buttons():
+            if button.text() == '确认完成':
+                button.click()
+    monkeypatch.setattr(QMessageBox, 'exec', confirm)
+    finish.click()
     assert not tasks.list_today() and tasks.list_completed()[0].status is TaskStatus.DONE
-    checkbox.setChecked(False)
+    tasks.set_status(tasks.list_completed()[0].id, TaskStatus.TODO)
     assert tasks.list_today()[0].status is TaskStatus.TODO
     companion.close()
 

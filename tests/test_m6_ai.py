@@ -487,7 +487,7 @@ def test_local_ai_consent_updates_report_button(tmp_path):
     )
     report = window.pages.widget(2)
     settings = window.pages.widget(3)
-    assert report.ai_report_button.isEnabled() is False
+    assert report.ai_report_button.isEnabled() is True  # Offline review is always available.
     assert settings.local_ai_config.isHidden()
     settings.local_ai_advanced_button.setChecked(True)
     assert not settings.local_ai_config.isHidden()
@@ -508,7 +508,7 @@ def test_local_ai_consent_updates_report_button(tmp_path):
     assert settings._local_ai_probe_thread is None
     assert "配置模型 llama3.2:3b 可用" in settings.local_ai_config_feedback.text()
 
-    report.ai_report_button.click()
+    report._rewrite_with_ai()  # Legacy local narrator regression; visible entry now opens review.
     for _ in range(100):
         app.processEvents()
         if report._report_ai_thread is None:
@@ -520,7 +520,7 @@ def test_local_ai_consent_updates_report_button(tmp_path):
     settings.local_ai.setChecked(False)
     app.processEvents()
     assert local_ai.enabled is False
-    assert report.ai_report_button.isEnabled() is False
+    assert report.ai_report_button.isEnabled() is True
     assert repository.get_consent("local_ai") is False
 
     settings.local_ai_endpoint.setText("http://localhost:11434/api/chat")

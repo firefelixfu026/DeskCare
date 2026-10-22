@@ -30,6 +30,8 @@ from deskcare.services.assistant_service import AssistantService
 from deskcare.ui.assistant import AssistantDialog
 from deskcare.services.lab_reading_service import LabReadingService
 from deskcare.ui.lab_reading import LabReadingDialog
+from deskcare.services.report_review import ReportReviewService
+from deskcare.ui.report_review import ReportReviewDialog
 
 
 class MainWindow(QMainWindow):
@@ -69,6 +71,8 @@ class MainWindow(QMainWindow):
         self._assistant_dialog = None
         self.lab_reading_service = LabReadingService(repository, local_ai_service, cloud_ai_service) if repository is not None else None
         self._lab_dialog = None
+        self.report_review_service = ReportReviewService(repository, local_ai_service, cloud_ai_service) if repository is not None else None
+        self._report_review_dialog = None
         self._allow_close = False
         self._shutting_down = False
         self.reminder_popup = ReminderPopup()
@@ -119,7 +123,7 @@ class MainWindow(QMainWindow):
         self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.navigation.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self.navigation, 1)
-        version = QLabel("DeskCare · UI17")
+        version = QLabel("DeskCare · UI18")
         version.setObjectName("sidebarFooter")
         sidebar_layout.addWidget(version)
 
@@ -188,6 +192,9 @@ class MainWindow(QMainWindow):
         )
         self.reports_page.sections.tabBar().hide()
         self.reports_page.open_settings_requested.connect(self._open_wellness_settings)
+        self.reports_page.review_requested.connect(self._open_report_review)
+        self.reports_page.report_period.currentIndexChanged.connect(self._invalidate_report_review)
+        self.reports_page.refresh_report_button.clicked.connect(self._invalidate_report_review)
         self.reports_page.journal_page.task_created.connect(self._show_journal_task)
         self.pages.addWidget(self.reports_page)
         self.settings_page = SettingsPage(
@@ -314,6 +321,33 @@ class MainWindow(QMainWindow):
             self._lab_dialog = LabReadingDialog(self.lab_reading_service, self)
         self._lab_dialog.begin()
 
+    def _open_report_review(self):
+        if self.report_review_service is None or self.report_service is None:
+            return
+        if self._report_review_dialog is None:
+            self._report_review_dialog = ReportReviewDialog(self.report_review_service, self)
+            self._report_review_dialog.open_view_requested.connect(self._review_open_view)
+        period = self.reports_page._current_period(self.reports_page.report_period.currentData() or 'daily')
+        facts, _ = self.report_service.render(period)
+        self._report_review_dialog.begin(facts)
+
+    def _invalidate_report_review(self, *_):
+        if self.report_review_service is not None:
+            self.report_review_service.invalidate()
+        if self._report_review_dialog is not None:
+            self._report_review_dialog.reject()
+
+    def _review_open_view(self, view):
+        if view == 'tasks':
+            self.navigation.setCurrentRow(0)
+            self.today_page.task_scope.setCurrentIndex(0)
+        elif view == 'usage':
+            self.navigation.setCurrentRow(1)
+        elif view == 'reminders':
+            self.navigation.setCurrentRow(4)
+            self.settings_page.sections.setCurrentIndex(1)
+        self._show_main_window()
+
     def _sync_advised_interval(self, minutes):
         edit = self.settings_page.reminder_interval
         if edit.value() != minutes:
@@ -358,6 +392,13 @@ class MainWindow(QMainWindow):
         self.header_state.style().polish(self.header_state)
 
     def _refresh_after_data_clear(self) -> None:
+        if self.report_review_service is not None:
+            self.report_review_service.invalidate()
+        if self._report_review_dialog is not None:
+            self._report_review_dialog.snapshot = None
+            self._report_review_dialog.reject()
+            self._report_review_dialog._render((), ())
+            self._report_review_dialog.status.clear()
         if self.lab_reading_service is not None:
             self.lab_reading_service.clear()
         if self._lab_dialog is not None:

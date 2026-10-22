@@ -16,12 +16,14 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDialog,
     QApplication,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QMenu,
+    QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -533,14 +535,67 @@ class CompanionWindow(QWidget):
         if not tasks:
             self.task_list.addWidget(QLabel("暂无今日任务"))
         for task in tasks[:6]:
-            box = QCheckBox(self.fontMetrics().elidedText(task.title, Qt.TextElideMode.ElideRight, 245))
-            box.setChecked(task.status is TaskStatus.DONE)
-            box.setToolTip(task.title)
-            box.toggled.connect(lambda checked, task_id=task.id: self._toggle_task(task_id, checked))
-            self.task_list.addWidget(box)
+            row = QWidget()
+            layout = QHBoxLayout(row)
+            layout.setContentsMargins(0, 0, 0, 0)
+            title = QPushButton(self.fontMetrics().elidedText(task.title, Qt.TextElideMode.ElideRight, 180))
+            title.setObjectName('companionTaskTitle')
+            title.setToolTip(task.title + '\n点击查看详情，不会标记完成')
+            title.clicked.connect(lambda _checked=False, task_id=task.id: self._show_task_details(task_id))
+            layout.addWidget(title, 1)
+            finish = QPushButton('完成…')
+            finish.setObjectName('secondaryButton')
+            finish.setAccessibleName(f'确认完成：{task.title}')
+            finish.clicked.connect(lambda _checked=False, task_id=task.id: self._confirm_task_done(task_id))
+            layout.addWidget(finish)
+            self.task_list.addWidget(row)
 
-    def _toggle_task(self, task_id: int, done: bool):
-        if self.task_service is not None:
-            self.task_service.set_status(task_id, TaskStatus.DONE if done else TaskStatus.TODO)
-            if done and self.reminder_coordinator is not None:
+    def _find_task(self, task_id):
+        return next((task for task in self.task_service.list_all() if task.id == task_id), None) if self.task_service else None
+
+    def _show_task_details(self, task_id):
+        task = self._find_task(task_id)
+        if task is None:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle('任务详情 · 只查看')
+        dialog.resize(460, 360)
+        layout = QVBoxLayout(dialog)
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText('\n'.join([
+            task.title, '',
+            '状态：' + {TaskStatus.TODO: '待处理', TaskStatus.DOING: '进行中', TaskStatus.DONE: '已完成'}[task.status],
+            f'安排：{self.task_service.schedule_text(task)}',
+            f'截止：{task.due_at.astimezone():%Y-%m-%d %H:%M}' if task.due_at else '截止：未设置',
+            f'预计用时：{task.estimated_minutes} 分钟' if task.estimated_minutes else '预计用时：未填写',
+            '', '备注：', task.notes or '未填写',
+        ]))
+        layout.addWidget(text, 1)
+        hint = QLabel('查看详情不会改变任务状态。需要完成时，请使用独立的“完成…”按钮。')
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        close = QPushButton('返回')
+        close.clicked.connect(dialog.accept)
+        layout.addWidget(close)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def _confirm_task_done(self, task_id):
+        task = self._find_task(task_id)
+        if task is None or task.status is TaskStatus.DONE:
+            return
+        box = QMessageBox(QMessageBox.Icon.Question, '完成这项任务？',
+                          f'{task.title}\n\n确认后会移到“已完成任务”。也可以在那里改回未完成。', parent=self)
+        box.setTextFormat(Qt.TextFormat.PlainText)
+        yes = box.addButton('确认完成', QMessageBox.ButtonRole.AcceptRole)
+        no = box.addButton('先不完成', QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(no)
+        box.setEscapeButton(no)
+        box.exec()
+        latest = self._find_task(task_id)
+        if box.clickedButton() is yes and latest == task:
+            self.task_service.set_status(task_id, TaskStatus.DONE)
+            if self.reminder_coordinator is not None:
                 self.reminder_coordinator.mark_task_completed()
+        box.deleteLater()
