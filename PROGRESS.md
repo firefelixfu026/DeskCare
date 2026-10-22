@@ -4,7 +4,7 @@
 > 项目目录：`E:\FelixFu\document\ZJU\2026AW\浙客松`  
 > 进度原则：一次完成一个里程碑；每个阶段保留可运行版本、自动化证据和人工验收边界。
 
-> 当前体验版本：**UI18（2026-10-22）**。日报改为复盘卡片与下一步入口；经用户明确同意，新增独立、逐次确认的数量汇总 AI 复盘。悬浮任务标题只查看，完成需要独立操作并再次确认。本机保留完整最新版与固定启动入口；下方旧阶段为历史记录，最新证据见本文末尾及 `docs/UI18_日报复盘与任务防误触.md`。
+> 当前体验版本：**UI19（2026-10-22）**。按用户要求，悬浮任务右侧沿用主页面三态菜单，移除被置顶伙伴挡住的完成确认框；标题仍只查看，明确选择后才保存。本机保留完整最新版与固定入口；下方旧阶段为历史记录，最新证据见本文末尾及 `docs/UI19_悬浮窗三态任务.md`。
 
 ## 总览
 
@@ -1009,3 +1009,19 @@ Windows 11 / Python 3.12.7 / PyInstaller 6.22.3 构建成功；**23 模块及 Qt
 实际主要命令：`QT_QPA_PLATFORM=offscreen .venv/Scripts/python.exe -m pytest -o addopts= -q -rs --tb=short -p no:cacheprovider --basetemp .pytest-ui18-final`；`QT_SCALE_FACTOR=1.5` 下的 report_review／M8／ui3_mascot／ui_refresh 定向；`python -m scripts.preview_report_review docs/images/ui18` 与 `output/ui18-150`；`scripts/build_windows.ps1 -OutputName DeskCare-UI18`；`python -m scripts.verify_ui18_bundle`；`python -m scripts.package_ui18`。
 
 本机完整 `dist/DeskCare-UI18` 与固定启动入口保留，未强制结束或启动个人实例；GitHub 成功与服务端哈希以后续回执为准。真实 DeepSeek 挑选重点的质量、原生焦点／多屏／干净机仍未实测，自动化 transport 和离屏界面不替代这些证据。下一最小步骤：用户正常退出旧版，从本机固定入口核对任务防误触，并在复盘独立授权／预览后主动试一次非敏感数量汇总，不扩展新模块。
+
+## UI19｜悬浮窗三态任务与置顶层级（2026-10-22）
+
+用户截图显示 UI18 完成确认框被悬浮窗遮挡，并明确要求与主页面一样直接选择待处理／进行中／已完成。原因是伙伴为 WindowStaysOnTop 的 Tool 窗口，普通 QDialog/QMessageBox 未匹配置顶层级。本次按新要求移除完成确认框，不再坚持 UI18 的二次弹窗方案。
+
+CompanionWindow 复用既有 TaskStatusCombo，右侧用 116×38 紧凑圆角状态；标题只打开纯文本只读详情。打开／浏览／Escape 取消不写入，明确选择保存；Qt str-backed enum 规范化、同状态不保存、旧行状态与当前任务比对，外部改变／删除不覆盖。状态保存仍经 TaskService，DONE 才发一次本人完成信号并归档，长期任务语义不变。刷新先关闭菜单并 hide 旧行再 deleteLater。TaskStatusCombo 只在所属顶层窗口置顶时带 WindowStaysOnTopHint，主页面菜单不强制置顶；详情也继承伙伴置顶标记。没有新表、监测／AI 请求或权限。
+
+修改 `ui/companion.py`、`ui/task_status.py`、`app.py`、`ui/main_window.py`、固定启动入口；更新旧 M8／吉祥物／详情测试契约，新增 `tests/test_ui19_companion_status.py` 九项；调整旧报告截图脚本不再调用已移除完成方法，新增隔离伙伴预览、UI19 包装／包核对脚本，README 两入口、五份核心文档、UI19 说明／发布说明及三幅虚构截图。已有个人商业计划书 PDF 删除／新增不提交；QA 输出只留本机。没有删除旧程序或用户数据。
+
+实际执行：定向 `QT_QPA_PLATFORM=offscreen .venv/Scripts/python.exe -m pytest tests/test_ui19_companion_status.py tests/test_ui5_status_menu.py tests/test_m8_companion.py tests/test_ui3_mascot.py tests/test_report_review.py -o addopts= -q -rs --tb=short -p no:cacheprovider --basetemp .pytest-ui19-focused` 得 **60 passed，25.94 秒**；全量同选项 `--basetemp .pytest-ui19-all` 得 **467 passed，190.03 秒**；150% 的 ui19／ui5／M8／吉祥物组得 **36 passed，14.64 秒**。包括实际 Qt 菜单鼠标点击、键盘确认、取消不写、DOING／DONE、完成信号一次、外部状态变化／删除、层级标记差异、标签宽度、标题只读和原日报复盘回归。
+
+普通与 150% 的三幅虚构离屏图逐张检查。按 computer-use 技能先读取完整指导和确认规则，用 `@oai/sky` 检查隔离窗口；纯 Tool 窗未出现在可定位列表，后为虚构 fixture 增加正常父窗口，list_windows 成功唯一定位。get_window／activate／截图调用随后返回 `Computer Use app approval timed out`，停止 UI 操作，没有拿旧坐标或替代工具绕过授权。三个临时 fixture 均正常四分钟自动退出，退出码 0、临时库清理；不读取或更改用户真实任务，不关闭用户应用。因此原生遮挡／焦点仍未验收，不能用离屏渲染或置顶 flags 断言取代实机结果。
+
+`scripts/build_windows.ps1 -OutputName DeskCare-UI19` 在 Windows 11 / Python 3.12.7 / PyInstaller 6.22.3 成功；`python -m scripts.verify_ui19_bundle` 验证 **14 模块及 QtPdf** 与源码一致。`python -m scripts.package_ui19` 生成含完整运行时、隔离演示入口、说明和虚构截图的 ZIP。compileall、pip check（No broken requirements found）与 git diff --check 通过。EXE SHA256 `2a62a0db806df76f16c63d203a9a79201e92f15484bdec390b2fef6be23c106b`；ZIP **54,699,729 字节**、SHA256 `a5bd6ebca40357612eeb8251569e3f8ae4f676f89a191c082c337d0c16d2278d`。
+
+本机完整 `dist/DeskCare-UI19` 保留，`Start-DeskCare.cmd` 已指向新程序，无需重复下载。GitHub 同步以随后成功回执及服务端哈希为准。未完成：真实桌面遮挡／多屏／干净机体验；下一最小步骤为用户正常退出旧版后从固定入口核对三态菜单，不扩展其他模块。

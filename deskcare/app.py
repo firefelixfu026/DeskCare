@@ -48,7 +48,7 @@ def create_application(argv: list[str] | None = None):
     qt_app = QApplication.instance() or QApplication(qt_argv)
     apply_theme(qt_app)
     qt_app.setApplicationName("DeskCare")
-    qt_app.setApplicationVersion("2.0.0-ui18")
+    qt_app.setApplicationVersion("2.0.0-ui19")
     instance_guard = SingleInstanceGuard(parent=qt_app)
     if not instance_guard.primary:
         return qt_app, None, None

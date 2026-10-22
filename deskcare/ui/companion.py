@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 from deskcare.domain.types import TaskStatus, WellnessLevel, WELLNESS_LEVEL_LABELS
 from deskcare.ui.mascot import MascotSurface
 from deskcare.ui.theme import STYLE, apply_theme
+from deskcare.ui.task_status import TaskStatusCombo
 
 
 class SproutMascot(QWidget):
@@ -530,6 +531,9 @@ class CompanionWindow(QWidget):
             item = self.task_list.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                for status in widget.findChildren(TaskStatusCombo):
+                    status.hidePopup()
+                widget.hide()
                 widget.deleteLater()
         tasks = self.task_service.list_today() if self.task_service is not None else []
         if not tasks:
@@ -538,16 +542,22 @@ class CompanionWindow(QWidget):
             row = QWidget()
             layout = QHBoxLayout(row)
             layout.setContentsMargins(0, 0, 0, 0)
-            title = QPushButton(self.fontMetrics().elidedText(task.title, Qt.TextElideMode.ElideRight, 180))
+            title = QPushButton(self.fontMetrics().elidedText(task.title, Qt.TextElideMode.ElideRight, 130))
             title.setObjectName('companionTaskTitle')
             title.setToolTip(task.title + '\n点击查看详情，不会标记完成')
             title.clicked.connect(lambda _checked=False, task_id=task.id: self._show_task_details(task_id))
             layout.addWidget(title, 1)
-            finish = QPushButton('完成…')
-            finish.setObjectName('secondaryButton')
-            finish.setAccessibleName(f'确认完成：{task.title}')
-            finish.clicked.connect(lambda _checked=False, task_id=task.id: self._confirm_task_done(task_id))
-            layout.addWidget(finish)
+            status = TaskStatusCombo()
+            status.setFixedSize(116, 38)
+            status.setAccessibleName(f'任务状态：{task.title}')
+            status.setToolTip('选择待处理、进行中或已完成；打开菜单不会改变状态')
+            for label, value in (('待处理', TaskStatus.TODO), ('进行中', TaskStatus.DOING), ('已完成', TaskStatus.DONE)):
+                status.addItem(label, value)
+            status.setCurrentIndex(status.findData(task.status))
+            status.currentIndexChanged.connect(
+                lambda _index, task_id=task.id, combo=status, previous=task.status:
+                self._set_task_status(task_id, combo.currentData(), previous))
+            layout.addWidget(status)
             self.task_list.addWidget(row)
 
     def _find_task(self, task_id):
@@ -558,6 +568,8 @@ class CompanionWindow(QWidget):
         if task is None:
             return
         dialog = QDialog(self)
+        dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint,
+                             bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint))
         dialog.setWindowTitle('任务详情 · 只查看')
         dialog.resize(460, 360)
         layout = QVBoxLayout(dialog)
@@ -572,7 +584,7 @@ class CompanionWindow(QWidget):
             '', '备注：', task.notes or '未填写',
         ]))
         layout.addWidget(text, 1)
-        hint = QLabel('查看详情不会改变任务状态。需要完成时，请使用独立的“完成…”按钮。')
+        hint = QLabel('这里只查看，不改变状态。返回后可在任务右侧选择待处理、进行中或已完成。')
         hint.setWordWrap(True)
         layout.addWidget(hint)
         close = QPushButton('返回')
@@ -581,21 +593,17 @@ class CompanionWindow(QWidget):
         dialog.exec()
         dialog.deleteLater()
 
-    def _confirm_task_done(self, task_id):
+    def _set_task_status(self, task_id, status, previous):
+        status = TaskStatus(status)  # Qt may return a str for a str-backed enum.
         task = self._find_task(task_id)
-        if task is None or task.status is TaskStatus.DONE:
+        if task is None or task.status != previous:
+            self.refresh_tasks()  # Do not overwrite a status changed elsewhere.
             return
-        box = QMessageBox(QMessageBox.Icon.Question, '完成这项任务？',
-                          f'{task.title}\n\n确认后会移到“已完成任务”。也可以在那里改回未完成。', parent=self)
-        box.setTextFormat(Qt.TextFormat.PlainText)
-        yes = box.addButton('确认完成', QMessageBox.ButtonRole.AcceptRole)
-        no = box.addButton('先不完成', QMessageBox.ButtonRole.RejectRole)
-        box.setDefaultButton(no)
-        box.setEscapeButton(no)
-        box.exec()
-        latest = self._find_task(task_id)
-        if box.clickedButton() is yes and latest == task:
-            self.task_service.set_status(task_id, TaskStatus.DONE)
-            if self.reminder_coordinator is not None:
+        if status == task.status:
+            return
+        try:
+            self.task_service.set_status(task_id, status)
+            if status is TaskStatus.DONE and self.reminder_coordinator is not None:
                 self.reminder_coordinator.mark_task_completed()
-        box.deleteLater()
+        except KeyError:
+            self.refresh_tasks()

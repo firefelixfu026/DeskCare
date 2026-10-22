@@ -58,6 +58,10 @@ class TaskStatusCombo(QComboBox):
     def showPopup(self):
         if not self.isEnabled() or not self.count():
             return
+        # A companion is an always-on-top tool window. Its popup must be in
+        # that same z-order band; ordinary main-page menus stay non-topmost.
+        self.menu.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint,
+                                bool(self.window().windowFlags() & Qt.WindowType.WindowStaysOnTopHint))
         self.menu.clear()
         for index in range(self.count()):
             action = self.menu.addAction(self.itemText(index))

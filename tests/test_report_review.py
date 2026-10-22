@@ -269,6 +269,8 @@ def test_companion_title_only_opens_read_only_details(tmp_path, monkeypatch):
     viewed = []
 
     def show(dialog):
+        from PySide6.QtCore import Qt
+        assert dialog.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
         editor = dialog.findChild(QPlainTextEdit)
         assert editor.isReadOnly()
         viewed.append(editor.toPlainText())

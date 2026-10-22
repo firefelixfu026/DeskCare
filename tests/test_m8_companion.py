@@ -66,7 +66,7 @@ def test_companion_quick_add_and_persistence(tmp_path):
     companion.close()
 
 
-def test_companion_completing_task_requires_explicit_confirmation(tmp_path, monkeypatch):
+def test_companion_status_selection_is_explicit_without_confirmation_dialog(tmp_path, monkeypatch):
     from deskcare.domain.types import TaskStatus
     from deskcare.services.task_service import TaskService
     from deskcare.storage.database import UsageRepository
@@ -77,20 +77,20 @@ def test_companion_completing_task_requires_explicit_confirmation(tmp_path, monk
     tasks = TaskService(repo)
     tasks.add_manual("完成原型")
     companion = CompanionWindow(tasks, repository=repo)
-    from PySide6.QtWidgets import QMessageBox, QPushButton
+    from PySide6.QtWidgets import QMessageBox
+    from deskcare.ui.task_status import TaskStatusCombo
     row = companion.task_list.itemAt(0).widget()
-    finish = [button for button in row.findChildren(QPushButton) if button.text() == '完成…'][0]
-    monkeypatch.setattr(QMessageBox, 'exec', lambda box: None)
-    finish.click()
+    combo = row.findChild(TaskStatusCombo)
+    def unexpected(_box):
+        raise AssertionError('Status selection must not open a completion dialog')
+    monkeypatch.setattr(QMessageBox, 'exec', unexpected)
+    combo.showPopup()
     assert tasks.list_today()[0].status is TaskStatus.TODO
-
-    def confirm(box):
-        assert box.defaultButton().text() == '先不完成'
-        for button in box.buttons():
-            if button.text() == '确认完成':
-                button.click()
-    monkeypatch.setattr(QMessageBox, 'exec', confirm)
-    finish.click()
+    combo.menu.actions()[1].trigger()
+    assert tasks.list_today()[0].status is TaskStatus.DOING
+    combo = companion.task_list.itemAt(0).widget().findChild(TaskStatusCombo)
+    combo.showPopup()
+    combo.menu.actions()[2].trigger()
     assert not tasks.list_today() and tasks.list_completed()[0].status is TaskStatus.DONE
     tasks.set_status(tasks.list_completed()[0].id, TaskStatus.TODO)
     assert tasks.list_today()[0].status is TaskStatus.TODO

@@ -106,7 +106,7 @@ def test_unauthorized_history_and_yesterdays_state_are_not_reused(companion, mon
     assert repo.wellness_for_day(date.today()) is None
 
 
-def test_mascot_click_opens_existing_task_controls_and_returns_to_art(companion, app, monkeypatch):
+def test_mascot_click_opens_existing_task_controls_and_returns_to_art(companion, app):
     window, _repo, _bodylog, tasks = companion
     window.set_presentation("mascot")
     window.show()
@@ -123,12 +123,11 @@ def test_mascot_click_opens_existing_task_controls_and_returns_to_art(companion,
     window.task_input.setText("虚构吉祥物任务")
     window.add_task_button.click()
     assert tasks.list_today()[0].title == "虚构吉祥物任务"
-    from PySide6.QtWidgets import QMessageBox, QPushButton
-    def confirm(box):
-        next(button for button in box.buttons() if button.text() == '确认完成').click()
-    monkeypatch.setattr(QMessageBox, 'exec', confirm)
+    from deskcare.ui.task_status import TaskStatusCombo
     row = window.task_list.itemAt(0).widget()
-    next(button for button in row.findChildren(QPushButton) if button.text() == '完成…').click()
+    combo = row.findChild(TaskStatusCombo)
+    combo.showPopup()
+    combo.menu.actions()[2].trigger()
     assert not tasks.list_today() and tasks.list_completed()[0].status is TaskStatus.DONE
     window.back_to_mascot.click()
     assert window.mascot.isVisible()

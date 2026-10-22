@@ -1,13 +1,13 @@
-"""Render fictional UI18 review and deliberate companion completion, no model request."""
+"""Render fictional review and companion status selection, no model request."""
 import argparse
 import gc
 from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFontDatabase
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication
+from deskcare.ui.task_status import TaskStatusCombo
 from deskcare.config import ConfigStore
 from deskcare.sensors.fake import FakeActivityProvider
 from deskcare.services.consent_service import MonitoringController
@@ -56,19 +56,17 @@ def main():
         app.processEvents()
         window.companion.grab().save(str(args.output / 'companion-tasks.png'))
 
-        def capture_confirmation():
-            box = app.activeModalWidget()
-            assert isinstance(box, QMessageBox)
-            box.grab().save(str(args.output / 'completion-confirm.png'))
-            box.reject()  # Demonstration never completes a task.
-        QTimer.singleShot(60, capture_confirmation)
-        window.companion._confirm_task_done(task.id)
+        combo = window.companion.task_list.itemAt(0).widget().findChild(TaskStatusCombo)
+        combo.showPopup()
+        app.processEvents()
+        combo.menu.grab().save(str(args.output / 'task-status-menu.png'))
+        combo.hidePopup()
         window._allow_close = True
         window.close()
         window.deleteLater()
         app.processEvents()
         gc.collect()
-    print('Rendered 5 fictional UI18 screens, no AI requests or personal data.')
+    print('Rendered 5 fictional screens, no AI requests or personal data.')
 
 
 if __name__ == '__main__':
