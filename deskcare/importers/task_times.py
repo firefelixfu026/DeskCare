@@ -51,7 +51,9 @@ def task_time_text(task) -> str:
 
 
 def split_task_time(title: str, planned_for: date | None, reference: date) -> TaskDraft:
-    cleaned = unicodedata.normalize("NFKC", title).strip()
+    from deskcare.importers.task_locations import split_room_location, LOCATION_PREFIX
+    source_title, room = split_room_location(title)
+    cleaned = unicodedata.normalize("NFKC", source_title).strip()
     due = starts = ends = None
     hints = []
     flags = []
@@ -111,7 +113,7 @@ def split_task_time(title: str, planned_for: date | None, reference: date) -> Ta
     except ValueError:
         due = starts = ends = None
         hints.append(title)
-        cleaned = title
+        cleaned = source_title
         flags.append("due_time_ambiguous")
     ambiguous = re.search(r"[（(]([^()（）]*(?:暂定|待定|上午|下午|晚上)[^()（）]*)[)）]", cleaned)
     if ambiguous:
@@ -132,8 +134,13 @@ def split_task_time(title: str, planned_for: date | None, reference: date) -> Ta
         minutes = int((ends - starts).total_seconds() / 60)
         estimate = minutes if 1 <= minutes <= 1440 else None
     cleaned = re.sub(r"[（(]\s*[)）]", "", cleaned).strip(" -()（）")
+    if room and not cleaned:
+        cleaned, room = unicodedata.normalize('NFKC', room), ''
+    if room:
+        flags.extend(('source_location', 'rule_room_location'))
     return TaskDraft(cleaned, due, estimate, uncertainty=tuple(flags), planned_for=day,
-                     starts_at=starts, ends_at=ends, time_hint="；".join(hints))
+                     starts_at=starts, ends_at=ends, time_hint="；".join(hints),
+                     notes=LOCATION_PREFIX + room if room else '')
 
 
 def merge_source_times(candidates: list[TaskDraft], source_text: str, filename: str) -> list[TaskDraft]:
@@ -162,8 +169,9 @@ def merge_source_times(candidates: list[TaskDraft], source_text: str, filename: 
         def candidate_score(item):
             location = location_from_notes(item.notes) if ("source_location" in item.uncertainty
                         and item.source_row == original.source_row) else ""
-            left = title_without_location(original.title, location)
-            right = title_without_location(item.title, location)
+            grounded = location_from_notes(original.notes) if 'rule_room_location' in original.uncertainty else location
+            left = title_without_location(unicodedata.normalize('NFKC', original.title), unicodedata.normalize('NFKC', grounded))
+            right = title_without_location(unicodedata.normalize('NFKC', item.title), unicodedata.normalize('NFKC', grounded))
             return score(key(left), key(right))
         ranked = sorted(((candidate_score(item), index, item) for index, item in remaining),
                         key=lambda entry: (entry[0], entry[2].source_row == original.source_row
@@ -175,7 +183,9 @@ def merge_source_times(candidates: list[TaskDraft], source_text: str, filename: 
         if ranked and ranked[0][0] >= .8 and (source_bound or len(ranked) == 1 or ranked[0][0] - ranked[1][0] >= .08):
             _, index, model = ranked[0]
             remaining = [(i, item) for i, item in remaining if i != index]
-            location = location_from_notes(model.notes) if source_bound else ""
+            # A literal room extracted from this source task wins over model
+            # omissions, rewrites and other rows' locations. Never add both.
+            location = location_from_notes(model.notes) if source_bound and 'rule_room_location' not in original.uncertainty else ""
             clean_title = title_without_location(original.title, location)
             # If stripping would erase the whole task, do not label the task
             # name itself as a place. The original title is always retained.

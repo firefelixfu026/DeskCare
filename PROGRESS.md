@@ -4,7 +4,7 @@
 > 项目目录：`E:\FelixFu\document\ZJU\2026AW\浙客松`  
 > 进度原则：一次完成一个里程碑；每个阶段保留可运行版本、自动化证据和人工验收边界。
 
-> 当前体验版本：**UI19（2026-10-22）**。按用户要求，悬浮任务右侧沿用主页面三态菜单，移除被置顶伙伴挡住的完成确认框；标题仍只查看，明确选择后才保存。本机保留完整最新版与固定入口；下方旧阶段为历史记录，最新证据见本文末尾及 `docs/UI19_悬浮窗三态任务.md`。
+> 当前体验版本：**UI20（2026-10-23）**。修复导入的北4-205等教室地点：本机兜底分离到备注，AI 漏填／改写／错行也不覆盖原文地点，保留时间、用时、备注与重复检查。本机完整最新版和固定入口保留；最新证据见本文末尾及 `docs/UI20_教室地点识别修复.md`。
 
 ## 总览
 
@@ -1025,3 +1025,23 @@ CompanionWindow 复用既有 TaskStatusCombo，右侧用 116×38 紧凑圆角状
 `scripts/build_windows.ps1 -OutputName DeskCare-UI19` 在 Windows 11 / Python 3.12.7 / PyInstaller 6.22.3 成功；`python -m scripts.verify_ui19_bundle` 验证 **14 模块及 QtPdf** 与源码一致。`python -m scripts.package_ui19` 生成含完整运行时、隔离演示入口、说明和虚构截图的 ZIP。compileall、pip check（No broken requirements found）与 git diff --check 通过。EXE SHA256 `2a62a0db806df76f16c63d203a9a79201e92f15484bdec390b2fef6be23c106b`；ZIP **54,699,729 字节**、SHA256 `a5bd6ebca40357612eeb8251569e3f8ae4f676f89a191c082c337d0c16d2278d`。
 
 本机完整 `dist/DeskCare-UI19` 保留，`Start-DeskCare.cmd` 已指向新程序，无需重复下载。GitHub 同步以随后成功回执及服务端哈希为准。未完成：真实桌面遮挡／多屏／干净机体验；下一最小步骤为用户正常退出旧版后从固定入口核对三态菜单，不扩展其他模块。
+
+## UI20｜教室地点本机兜底与 AI 原文合并（2026-10-23）
+
+用户截图中 CSSU全员大会(北4-205、GOA全员大会(北2-112 仍在标题、备注空白。先只读检查并用虚构文本复现：旧流程依赖模型返回 location，漏填、扩写或错行会使 checked_location 拒绝，规则又保留原标题。无法仅凭截图确定真实模型是哪一类输出，未读取个人请求记录。用户明确要求直接修复后，才实现本轮变更。
+
+task_locations 新增 split_room_location 纯函数，以窄范围方向楼栋＋三／四位房间号及字面边界识别北4-205／北2-112／东1A-101等，支持相应全角数字、连接符和括号／空格／地点前缀；逐字保存编号，不猜楼栋全称或地址。多个地点、日期／时间、作业号、明确编号／题号／工单／型号／版本、否定及无法分辨的连写保留核对。只含房间的任务不消失，单钟点所需非空括号不提前删掉。
+
+split_task_time 在 NFKC／时间处理前摘取字面房间并记 source_location＋rule_room_location，解析日期、时段、24:00、长期日期和原用时仍由原规则完成；CSV／XLSX 的 title 共享房间函数，不覆盖已有显式字段。merge_source_times 用原文地点辅助标题匹配，规则已提取的本条地点优先，模型漏填、扩写、错行或其他条目的地点不覆盖，也不追加冲突地址。普通场馆／平台仍按原逐字与归属校验。来源 tooltip 区分本机与 AI，个人备注合并、不重复追加、超长不截断；确认／取消／重复导入及事务门控保持不变，旧任务不自动迁移或改写。
+
+本机与联网提示新增教室号、CSSU拆分示例及编号／时间反例，模型正文仍是用户选择并逐次确认的原清单，不增加已有任务库、健康资料、模型请求或重试。没有新依赖、数据库迁移或监测权限。
+
+变更：task_locations／task_times／csv_importer、optional_local_llm／cloud_task_assistant、ImportPreviewDialog、app／MainWindow版本和固定启动入口；UI16 错误模型地点用例升级为“拒绝错误提议、本机仍可从原文恢复”，新增 `tests/test_ui20_room_locations.py` **55 项**；新增虚构预览／打包／包核对脚本、两幅普通截图、UI20 使用及发布说明、README 两入口与五份核心文档。个人商业计划书 PDF 原有删除／新增不提交，缩放图只留本机；保留 UI19，不删除用户程序或数据。
+
+实际验证：地点初组 **70 passed，3.62 秒**。补充真实内存 XLSX 路径、泛化地点幻觉拒绝、相邻单钟点、仅房间任务不消失与旧标题去重后，全量 `QT_QPA_PLATFORM=offscreen .venv/Scripts/python.exe -m pytest -o addopts= -q -rs --tb=short -p no:cacheprovider --basetemp .pytest-ui20-all` 得 **522 passed，204.72 秒**；150% 的 UI20／UI16／M2 UI／UI8 时间统计组合 **99 passed，9.08 秒**。覆盖原字符、来源归属、漏填／改写／错行、同名不同教室、时间／截止／用时、CSV／XLSX、备注编辑保留、确认前无写入、确认保存、重复导入和旧标题可能重复。原 checked_location 对错误模型位置的拒绝仍单独断言，不用本机兜底掩盖其回归。
+
+`python -m scripts.preview_room_locations docs/images/ui20` 及 `QT_SCALE_FACTOR=1.5 ... output/ui20-150` 两组虚构 Qt 离屏图逐张检查；没有读取个人库、密钥、健康资料，未发真实模型／付费请求，也未启动个人实例。`compileall -q deskcare`、`pip check`（No broken requirements found）、`git diff --check` 通过。
+
+Windows 11 / Python 3.12.7 / PyInstaller 6.22.3：`scripts/build_windows.ps1 -OutputName DeskCare-UI20` 成功；`python -m scripts.verify_ui20_bundle` 核对 **15 模块及 QtPdf** 与源码一致。`python -m scripts.package_ui20` 生成完整运行时、隔离演示入口、说明及虚构截图的 ZIP。EXE SHA256 `af555ba6c5b1a0f3f952ac3aa5b71a9752609473c676dbecbe53e704de4e23a5`；ZIP **54,753,899 字节**、SHA256 `d2c79fd074121a6fd5bd5370a15e97ed699fe84b82e2a7072c88e3ca2b8b400c`。
+
+本机完整 `dist/DeskCare-UI20` 和固定 `Start-DeskCare.cmd` 已更新，不要求重复下载。GitHub 同步及服务端哈希以随后成功回执为准。未验证：真实 DeepSeek 对其他校园简称的质量、原生 Windows 焦点／多屏／干净机；本次明确编号的恢复不依赖模型返回。下一最小步骤为用户正常退出旧版，使用固定本机入口重新预览本人选定的非敏感清单，核对备注和重复检查后再决定确认，不扩展其他模块。

@@ -1,12 +1,12 @@
 # DeskCare
 
-[Windows 体验版下载](https://github.com/firefelixfu026/DeskCare/releases/tag/v2.0.0-ui19) · [悬浮窗三态任务](docs/UI19_悬浮窗三态任务.md) · [日报复盘](docs/UI18_日报复盘与任务防误触.md) · [历史版本归档](https://github.com/firefelixfu026/DeskCare/releases/tag/legacy-archive-2026-10-21) · [商业计划书](docs/DeskCare_商业计划书_UI13.md)
+[Windows 体验版下载](https://github.com/firefelixfu026/DeskCare/releases/tag/v2.0.0-ui20) · [教室地点识别修复](docs/UI20_教室地点识别修复.md) · [悬浮窗三态任务](docs/UI19_悬浮窗三态任务.md) · [历史版本归档](https://github.com/firefelixfu026/DeskCare/releases/tag/legacy-archive-2026-10-21) · [商业计划书](docs/DeskCare_商业计划书_UI13.md)
 
 DeskCare 是一个 Windows 本地优先的数字健康习惯辅助与今日任务联动工具。它不是医疗诊断器、生产力评分器或全天候行为监视器。
 
-## 当前开发阶段：UI19 悬浮窗三态任务
+## 当前开发阶段：UI20 教室地点识别修复
 
-当前程序：`dist/DeskCare-UI19/DeskCare-UI19.exe`，项目根目录 `Start-DeskCare.cmd` 指向最新版；本机保留完整程序，不要求重复下载。先从托盘退出旧版。悬浮任务右侧沿用主页面的“待处理／进行中／已完成”圆角菜单，选中即保存，不再弹完成确认框；打开、浏览、取消不保存，标题仍只查看。菜单与详情匹配置顶层级。见 [UI19 说明](docs/UI19_悬浮窗三态任务.md)。保留 UI18 日报复盘的独立授权、中文预览与最小数量上传，以及其他既有功能。
+当前程序：`dist/DeskCare-UI20/DeskCare-UI20.exe`，项目根目录 `Start-DeskCare.cmd` 指向最新版；本机保留完整程序，不要求重复下载。先从托盘退出旧版。导入新增本机教室编号兜底，“北4-205／北2-112／东1A-101”等明确活动地点从标题移到备注，AI 漏填、改写或行号错误也不丢失；保留时间、预计用时及个人备注。模糊或多个地点不猜，原草稿仍可核对。见 [UI20 说明](docs/UI20_教室地点识别修复.md)。三态悬浮任务、日报复盘及独立许可等既有功能保留，不扫描任务库或改变已有任务。
 
 “轻量个人 AI 健康助手”将任务与使用节奏、主动状态记录、检验单辅助阅读放在个人桌面。每个敏感功能独立授权，不自动混合或上传健康历史。检验单辅助阅读从血常规常见项起步，不作疾病或治疗判断。
 

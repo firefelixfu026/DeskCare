@@ -50,11 +50,13 @@ def test_location_with_deadline_estimate_and_long_range():
 
 @pytest.mark.parametrize("location,row", [("西2-888", 2), ("东1A-101", 1), ("东1A-101", True),
     ("东1A-101", 999), ("东1A-101", "2"), ("东1A-101\n地点", 2), ({"text": "东1A-101"}, 2), ("x"*161, 2)])
-def test_invalid_or_hallucinated_places_never_enter_notes(location, row):
+def test_invalid_model_places_never_override_literal_room_fallback(location, row):
     source = "# 2031-10-23\n- 例会（地点：东1A-101）\n"
+    assert checked_location(location, row, source) is None
     result = parse(source, dict(title="例会（地点：东1A-101）", location=location, source_row=row))
-    assert result.drafts[0].notes == ""
-    assert "东1A-101" in result.drafts[0].title  # source text is not erased
+    assert result.drafts[0].notes == "地点：东1A-101"
+    assert result.drafts[0].title == '例会'
+    assert 'rule_room_location' in result.drafts[0].uncertainty
 
 
 def test_missing_location_supported_without_changing_legacy_result():
@@ -73,9 +75,8 @@ def test_locations_are_bound_to_their_own_activities():
     source = "- 组会（地点：东1A-101）\n- 社团例会（地点：西2-202）\n"
     result = parse(source, dict(title="组会", location="西2-202", source_row=2),
                    dict(title="社团例会", location="东1A-101", source_row=1))
-    assert [task.notes for task in result.drafts] == ["", ""]
-    assert "东1A-101" in result.drafts[0].title
-    assert "西2-202" in result.drafts[1].title
+    assert [task.notes for task in result.drafts] == ['地点：东1A-101', '地点：西2-202']
+    assert [task.title for task in result.drafts] == ['组会', '社团例会']
 
 
 def test_same_named_activities_keep_separate_locations():

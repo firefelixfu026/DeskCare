@@ -155,6 +155,9 @@ class CloudTaskAssistant:
         '严格返回 JSON：{"tasks":[{"title":string,"due_at":string|null,'
         '"estimated_minutes":integer|null,"location":string|null,"source_row":integer|null}]}。'
         "location 只摘录该活动原文明确写出的地点、教室、场馆或线上会议平台，逐字保留，不猜地址、不补楼栋。"
+        "北4-205、北2-112、东1A-101 等出现在活动括号或地点位置时是教室编号，即使没写‘地点’也要单独提取。"
+        "例如 CSSU全员大会（北4-205）（15:00-17:00）：title 为 CSSU全员大会，location 为北4-205。"
+        "逐字保留编号、空格和连接符，不扩写为‘北4-205教室’，不把工单/题号/版本或日期时间当地点。"
         "source_row 为该任务所在原文行号，从 1 开始，含标题和空行；地点单独放 location，不混入标题。"
         "没有地点则 location 为 null，不要把时间、任务名称或待办内容当地点；地点会放到用户可编辑的备注中。"
         "不要推测缺失的日期或钟点；不确定的时间返回 null。"

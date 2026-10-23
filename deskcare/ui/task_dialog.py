@@ -402,7 +402,9 @@ class ImportPreviewDialog(QDialog):
         self.table.setItem(row, 2, QTableWidgetItem(task_time_text(draft)))
         self.table.setItem(row, 3, QTableWidgetItem(str(draft.estimated_minutes or "")))
         self.table.setItem(row, 4, QTableWidgetItem(draft.notes))
-        if "source_location" in draft.uncertainty and draft.notes:
+        if 'rule_room_location' in draft.uncertainty and draft.notes:
+            self.table.item(row, 4).setToolTip(draft.notes + '\n\n教室编号由本机从该条清单原文分离，请核对；可直接修改或删除。')
+        elif "source_location" in draft.uncertainty and draft.notes:
             self.table.item(row, 4).setToolTip(draft.notes + "\n\n地点由 AI 从该条清单原文摘录，请核对；可直接修改或删除。")
         elif "model_location_needs_confirmation" in draft.uncertainty:
             self.table.item(row, 4).setToolTip("AI 提议的地点无法与本条原文对应，未自动填入；可以手动补充。")

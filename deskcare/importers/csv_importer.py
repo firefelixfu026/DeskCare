@@ -97,6 +97,10 @@ def parse_csv_bytes(content: bytes, filename: str = "tasks.csv") -> ImportResult
             issues.append(estimate_issue)
         if due_issue or estimate_issue:
             continue
-        drafts.append(TaskDraft(title, due_at, estimate, row_number))
+        from deskcare.importers.task_locations import split_room_location, LOCATION_PREFIX
+        title, room = split_room_location(title)
+        drafts.append(TaskDraft(title, due_at, estimate, row_number,
+                                uncertainty=('source_location', 'rule_room_location') if room else (),
+                                notes=LOCATION_PREFIX + room if room else ''))
     issues.extend(duplicate_issues(drafts))
     return ImportResult(filename, tuple(drafts), tuple(issues))
